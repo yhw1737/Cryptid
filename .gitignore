@@ -1,0 +1,118 @@
+# ===================================================================
+# Unity .gitignore
+# Project: Digital Cryptid (LogicHunter)
+# ===================================================================
+
+# -----------------------------------------------
+# AI Agent Rules & Specs (Local Only)
+# -----------------------------------------------
+@AGENT_RULES.md
+@DEVELOPMENT_SPEC.md
+
+# -----------------------------------------------
+# Unity Generated
+# -----------------------------------------------
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Uu]ser[Ss]ettings/
+
+# -----------------------------------------------
+# Memory Profiler Snapshots
+# -----------------------------------------------
+MemoryCaptures/
+
+# -----------------------------------------------
+# Recordings (Unity Recorder)
+# -----------------------------------------------
+[Rr]ecordings/
+
+# -----------------------------------------------
+# Asset meta data should only be ignored when
+# having a hierarchical text serialization mode
+# -----------------------------------------------
+# *.pidb.meta
+# *.pdb.meta
+# *.mdb.meta
+
+# -----------------------------------------------
+# Visual Studio / Rider / VS Code
+# -----------------------------------------------
+ExportedObj/
+.vs/
+*.csproj
+*.unityproj
+*.sln
+*.suo
+*.tmp
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+.idea/
+
+# -----------------------------------------------
+# Gradle (Android Build)
+# -----------------------------------------------
+*.apk
+*.aab
+*.unitypackage
+*.gradle
+
+# -----------------------------------------------
+# Crashlytics
+# -----------------------------------------------
+crashlytics-build.properties
+sysinfo.txt
+
+# -----------------------------------------------
+# OS Generated
+# -----------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# -----------------------------------------------
+# Plastic SCM (Unity Version Control)
+# -----------------------------------------------
+ignore.conf
+*.private.0
+*.private
+
+# -----------------------------------------------
+# Visual Studio Code
+# -----------------------------------------------
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# -----------------------------------------------
+# TextMeshPro (auto-generated; re-importable)
+# -----------------------------------------------
+Assets/TextMesh Pro/
+
+# -----------------------------------------------
+# Burst AOT
+# -----------------------------------------------
+Assets/StreamingAssets/aa.meta
+Assets/StreamingAssets/aa/
+
+# -----------------------------------------------
+# NuGet (if using NuGetForUnity)
+# -----------------------------------------------
+Assets/Packages/
+packages/
