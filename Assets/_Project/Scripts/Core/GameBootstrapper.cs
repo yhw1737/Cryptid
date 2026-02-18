@@ -37,6 +37,7 @@ namespace Cryptid.Core
         [Header("Scene References")]
         [SerializeField] private MapGenerator _mapGenerator;
         [SerializeField] private TokenPlacer _tokenPlacer;
+        [SerializeField] private TileInteractionSystem _tileInteraction;
 
         [Header("Game Settings")]
         [Range(2, 5)]
@@ -97,6 +98,13 @@ namespace Cryptid.Core
 
             GameService.Register(_fsm);
 
+            // Subscribe to tile clicks for turn actions
+            if (_tileInteraction != null)
+            {
+                _tileInteraction.OnTileSelected += HandleTileClicked;
+                GameService.Register(_tileInteraction);
+            }
+
             Debug.Log($"[GameBootstrapper] Initialized. Players: {_playerCount}, " +
                      $"AutoStart: {_autoStart}");
         }
@@ -119,6 +127,8 @@ namespace Cryptid.Core
 
         private void OnDestroy()
         {
+            if (_tileInteraction != null)
+                _tileInteraction.OnTileSelected -= HandleTileClicked;
             GameService.ClearAll();
         }
 
@@ -180,7 +190,38 @@ namespace Cryptid.Core
 
         private void HandleTurnStarted(int playerIndex)
         {
-            // Could update UI here
+            Debug.Log($"[GameBootstrapper] === Turn {_turnManager.TurnNumber} === " +
+                     $"Player {playerIndex + 1} | Phase: {_turnManager.CurrentPhase} " +
+                     $"| Press Q (question) or S (search)");
+        }
+
+        /// <summary>
+        /// Handles tile click during gameplay.
+        /// Routes to Question or Search based on current TurnPhase.
+        /// </summary>
+        private void HandleTileClicked(HexTile tile)
+        {
+            if (_fsm.CurrentPhase != GamePhase.Playing || _turnManager == null) return;
+            if (tile == null) return;
+
+            switch (_turnManager.CurrentPhase)
+            {
+                case TurnPhase.SelectTile:
+                    // Question: auto-target the next player in turn order
+                    int targetPlayer = (_turnManager.CurrentPlayerIndex + 1) % _playerCount;
+                    _turnManager.SubmitQuestion(tile.Coordinates, targetPlayer);
+                    break;
+
+                case TurnPhase.Search:
+                    _turnManager.SubmitSearch(tile.Coordinates);
+                    break;
+
+                default:
+                    Debug.Log($"[GameBootstrapper] Tile clicked at {tile.Coordinates}, " +
+                             $"but current phase is {_turnManager.CurrentPhase}. " +
+                             $"Press Q or S first.");
+                    break;
+            }
         }
 
         private void HandleQuestionAsked(int askingPlayer, int targetPlayer, HexCoordinates tile)
