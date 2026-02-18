@@ -206,6 +206,10 @@ namespace Cryptid.Systems.Map
                 var meshCollider = hexObj.AddComponent<MeshCollider>();
                 meshCollider.sharedMesh = hexMesh;
 
+                // Add HexTile component for interaction
+                var hexTile = hexObj.AddComponent<HexTile>();
+                hexTile.Initialize(tile);
+
                 // Add small sphere for structures
                 if (tile.Structure != StructureType.None)
                 {
