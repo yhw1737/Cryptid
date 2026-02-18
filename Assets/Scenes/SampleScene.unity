@@ -573,6 +573,65 @@ MonoBehaviour:
   m_ShadowLayerMask: 1
   m_RenderingLayers: 1
   m_ShadowRenderingLayers: 1
+--- !u!1 &591674357
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 591674359}
+  - component: {fileID: 591674358}
+  m_Layer: 0
+  m_Name: PuzzleDebugVisualizer
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &591674358
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 591674357}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8d80ba6bc508a804d920e53c2a852cee, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Cryptid.Systems.Clue.PuzzleDebugVisualizer
+  _mapGenerator: {fileID: 148594030}
+  _playerCount: 3
+  _seed: -1
+  _answerColor: {r: 1, g: 0.85, b: 0, a: 1}
+  _validColor: {r: 0.2, g: 0.9, b: 0.3, a: 1}
+  _invalidColor: {r: 0.15, g: 0.08, b: 0.08, a: 1}
+  _playerColors:
+  - {r: 0.3, g: 0.6, b: 1, a: 1}
+  - {r: 1, g: 0.4, b: 0.3, a: 1}
+  - {r: 0.4, g: 0.9, b: 0.4, a: 1}
+  - {r: 1, g: 0.8, b: 0.2, a: 1}
+  - {r: 0.8, g: 0.4, b: 0.9, a: 1}
+  _generateKey: 103
+  _clearKey: 99
+  _cycleViewKey: 118
+--- !u!4 &591674359
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 591674357}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -0.12221, y: 0, z: -2.7288}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &832575517
 GameObject:
   m_ObjectHideFlags: 0
@@ -739,3 +798,4 @@ SceneRoots:
   - {fileID: 148594031}
   - {fileID: 209761993}
   - {fileID: 1889586829}
+  - {fileID: 591674359}
