@@ -4,8 +4,10 @@ using Cryptid.Systems.Clue;
 using Cryptid.Systems.Gameplay;
 using Cryptid.Systems.Map;
 using Cryptid.Systems.Turn;
+using Cryptid.UI;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.SceneManagement;
 
 namespace Cryptid.Core
 {
@@ -38,6 +40,7 @@ namespace Cryptid.Core
         [SerializeField] private MapGenerator _mapGenerator;
         [SerializeField] private TokenPlacer _tokenPlacer;
         [SerializeField] private TileInteractionSystem _tileInteraction;
+        [SerializeField] private GameUIManager _uiManager;
 
         [Header("Game Settings")]
         [Range(2, 5)]
@@ -76,6 +79,11 @@ namespace Cryptid.Core
             if (_tokenPlacer != null)
                 GameService.Register(_tokenPlacer);
 
+            // Auto-create GameUIManager if not assigned
+            if (_uiManager == null)
+                _uiManager = gameObject.AddComponent<GameUIManager>();
+            GameService.Register(_uiManager);
+
             // Build FSM
             _fsm = new GameStateMachine();
             _puzzleGenerator = new PuzzleGenerator();
@@ -97,6 +105,13 @@ namespace Cryptid.Core
             _fsm.OnStateChanged += HandleStateChanged;
 
             GameService.Register(_fsm);
+
+            // Bind UI to FSM
+            _uiManager.BindFSM(_fsm);
+
+            // Subscribe to UI events
+            _uiManager.OnActionChosen += HandleUIActionChosen;
+            _uiManager.OnRestartRequested += HandleRestart;
 
             // Subscribe to tile clicks for turn actions
             if (_tileInteraction != null)
@@ -129,6 +144,13 @@ namespace Cryptid.Core
         {
             if (_tileInteraction != null)
                 _tileInteraction.OnTileSelected -= HandleTileClicked;
+
+            if (_uiManager != null)
+            {
+                _uiManager.OnActionChosen -= HandleUIActionChosen;
+                _uiManager.OnRestartRequested -= HandleRestart;
+            }
+
             GameService.ClearAll();
         }
 
@@ -169,6 +191,9 @@ namespace Cryptid.Core
             _turnManager.OnSearchPerformed += HandleSearchPerformed;
             _turnManager.OnGameWon += HandleGameWon;
 
+            // Bind UI to gameplay systems
+            _uiManager.BindGameplay(_turnManager, _currentPuzzle, _playerCount);
+
             Debug.Log("[GameBootstrapper] Setup complete. Puzzle ready.");
         }
 
@@ -207,8 +232,10 @@ namespace Cryptid.Core
             switch (_turnManager.CurrentPhase)
             {
                 case TurnPhase.SelectTile:
-                    // Question: auto-target the next player in turn order
-                    int targetPlayer = (_turnManager.CurrentPlayerIndex + 1) % _playerCount;
+                    // Use UI-selected target if available, fallback to next player
+                    int targetPlayer = (_uiManager != null && _uiManager.SelectedTargetPlayer >= 0)
+                        ? _uiManager.SelectedTargetPlayer
+                        : (_turnManager.CurrentPlayerIndex + 1) % _playerCount;
                     _turnManager.SubmitQuestion(tile.Coordinates, targetPlayer);
                     break;
 
@@ -251,6 +278,27 @@ namespace Cryptid.Core
         {
             _gameOverState.WinnerIndex = winnerIndex;
             _playingState.TriggerGameOver();
+        }
+
+        /// <summary>
+        /// Handles action button clicks from the UI (Question / Search).
+        /// </summary>
+        private void HandleUIActionChosen(PlayerAction action)
+        {
+            if (_turnManager != null && _turnManager.CurrentPhase == TurnPhase.ChooseAction)
+            {
+                _turnManager.ChooseAction(action);
+            }
+        }
+
+        /// <summary>
+        /// Handles the "Play Again" button from the GameOver screen.
+        /// Reloads the current scene.
+        /// </summary>
+        private void HandleRestart()
+        {
+            GameService.ClearAll();
+            SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
         }
 
         // ---------------------------------------------------------

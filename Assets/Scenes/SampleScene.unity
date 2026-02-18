@@ -150,6 +150,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Cryptid.Core.GameBootstrapper
   _mapGenerator: {fileID: 148594030}
   _tokenPlacer: {fileID: 1284919991}
+  _tileInteraction: {fileID: 209761992}
   _playerCount: 3
   _puzzleSeed: -1
   _autoStart: 1
