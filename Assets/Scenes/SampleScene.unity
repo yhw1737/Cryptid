@@ -186,6 +186,56 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &209761991
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 209761993}
+  - component: {fileID: 209761992}
+  m_Layer: 0
+  m_Name: Tile Interaction
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &209761992
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 209761991}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 102b1f2c2bea0e943ba6b24fe65c22b6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Cryptid.Systems.Map.TileInteractionSystem
+  _camera: {fileID: 0}
+  _tileLayerMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  _hoverInfoText: {fileID: 0}
+  _selectedInfoText: {fileID: 0}
+--- !u!4 &209761993
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 209761991}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -0.12221, y: 0, z: -2.7288}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &330585543
 GameObject:
   m_ObjectHideFlags: 0
@@ -338,7 +388,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Cryptid.Systems.RTSCameraController
   _panSpeed: 0.5
   _panSmoothing: 0.15
-  _zoomSpeed: 5
+  _zoomSpeed: 1
   _zoomMin: 3
   _zoomMax: 50
   _zoomSmoothing: 0.1
@@ -624,6 +674,59 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1889586827
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1889586829}
+  - component: {fileID: 1889586828}
+  m_Layer: 0
+  m_Name: Clue Test Runner
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1889586828
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1889586827}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1ce2a3af33eefe846944b1902b858828, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Cryptid.Systems.Clue.ClueTestRunner
+  _mapGenerator: {fileID: 148594030}
+  _clueDefinitions:
+  - {fileID: 11400000, guid: 18eab1fb10e8fd548aaf983ec39d2636, type: 2}
+  - {fileID: 11400000, guid: b57d848b41fd4b043837d28d4a541c83, type: 2}
+  _validColor: {r: 0.2, g: 0.9, b: 0.3, a: 1}
+  _invalidColor: {r: 0.3, g: 0.1, b: 0.1, a: 1}
+  _solutionColor: {r: 1, g: 0.85, b: 0, a: 1}
+  _showLabels: 1
+  _spaceToRun: 1
+--- !u!4 &1889586829
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1889586827}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -0.12221, y: 0, z: -2.7288}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
@@ -634,3 +737,5 @@ SceneRoots:
   - {fileID: 361424354}
   - {fileID: 1323489645}
   - {fileID: 148594031}
+  - {fileID: 209761993}
+  - {fileID: 1889586829}
