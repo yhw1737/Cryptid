@@ -681,6 +681,80 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1284919989
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1284919992}
+  - component: {fileID: 1284919991}
+  - component: {fileID: 1284919990}
+  m_Layer: 0
+  m_Name: TokenPlacer
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1284919990
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1284919989}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 35d86a57c1d204f408bf359186084639, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Cryptid.Systems.Gameplay.TokenPlacementDebugger
+  _tokenPlacer: {fileID: 1284919991}
+  _tileInteraction: {fileID: 209761992}
+--- !u!114 &1284919991
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1284919989}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3877af3279e738b429879b3d33ad0e47, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Cryptid.Systems.Gameplay.TokenPlacer
+  _cubeSize: {x: 0.25, y: 0.25, z: 0.25}
+  _discRadius: 0.2
+  _discHeight: 0.08
+  _playerColors:
+  - {r: 0.2, g: 0.5, b: 1, a: 1}
+  - {r: 1, g: 0.3, b: 0.2, a: 1}
+  - {r: 0.3, g: 0.85, b: 0.3, a: 1}
+  - {r: 1, g: 0.75, b: 0.1, a: 1}
+  - {r: 0.7, g: 0.3, b: 0.85, a: 1}
+  _dropHeight: 3
+  _dropDuration: 0.5
+  _bounceHeight: 0.15
+  _landingPunch: 0.2
+  _baseYOffset: 0.15
+  _stackOffset: 0.3
+--- !u!4 &1284919992
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1284919989}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -0.12221, y: 0, z: -2.7288}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1323489643
 GameObject:
   m_ObjectHideFlags: 0
@@ -799,3 +873,4 @@ SceneRoots:
   - {fileID: 209761993}
   - {fileID: 1889586829}
   - {fileID: 591674359}
+  - {fileID: 1284919992}
