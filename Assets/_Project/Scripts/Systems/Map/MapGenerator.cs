@@ -173,57 +173,59 @@ namespace Cryptid.Systems.Map
         }
 
         /// <summary>
-        /// Spawns colored debug cubes when no TileVisualConfig is available.
-        /// Each cube is colored by terrain type for quick visual verification.
+        /// Spawns colored hex tiles when no TileVisualConfig is available.
+        /// Uses procedural hex mesh with terrain-based coloring.
+        /// Structures are shown as small spheres on top.
         /// </summary>
         private void SpawnDebugCubes()
         {
             Transform container = GetOrCreateContainer();
+
+            // Generate hex mesh once and reuse for all tiles
+            Mesh hexMesh = HexMeshGenerator.CreateHexPrismMesh(0.1f);
 
             foreach (var kvp in WorldMap)
             {
                 Vector3 worldPos = HexMetrics.HexToWorldPosition(kvp.Key);
                 WorldTile tile = kvp.Value;
 
-                // Create a primitive cube as placeholder
-                GameObject cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
-                cube.transform.position = worldPos;
-                cube.transform.localScale = new Vector3(
-                    HexMetrics.InnerRadius * 1.6f,
-                    0.1f,
-                    HexMetrics.OuterRadius * 0.9f);
-                cube.transform.SetParent(container);
-                cube.name = $"DebugTile_{kvp.Key}_{tile.Terrain}";
+                // Create hex tile object with mesh
+                var hexObj = new GameObject($"HexTile_{kvp.Key}_{tile.Terrain}");
+                hexObj.transform.position = worldPos;
+                hexObj.transform.SetParent(container);
 
-                // Color by terrain
-                var renderer = cube.GetComponent<Renderer>();
-                if (renderer != null)
-                {
-                    var mat = new Material(renderer.sharedMaterial);
-                    mat.color = TileVisualConfig.GetTerrainDebugColor(tile.Terrain);
-                    renderer.material = mat;
-                }
+                var meshFilter = hexObj.AddComponent<MeshFilter>();
+                meshFilter.sharedMesh = hexMesh;
+
+                var meshRenderer = hexObj.AddComponent<MeshRenderer>();
+                var mat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+                mat.color = TileVisualConfig.GetTerrainDebugColor(tile.Terrain);
+                meshRenderer.material = mat;
+
+                // Add collider for future raycasting
+                var meshCollider = hexObj.AddComponent<MeshCollider>();
+                meshCollider.sharedMesh = hexMesh;
 
                 // Add small sphere for structures
                 if (tile.Structure != StructureType.None)
                 {
                     GameObject marker = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                    marker.transform.position = worldPos + Vector3.up * 0.2f;
+                    marker.transform.position = worldPos + Vector3.up * 0.25f;
                     marker.transform.localScale = Vector3.one * 0.3f;
-                    marker.transform.SetParent(cube.transform);
+                    marker.transform.SetParent(hexObj.transform);
                     marker.name = $"Structure_{tile.Structure}";
 
                     var markerRenderer = marker.GetComponent<Renderer>();
                     if (markerRenderer != null)
                     {
-                        var markerMat = new Material(markerRenderer.sharedMaterial);
+                        var markerMat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
                         markerMat.color = Color.red;
                         markerRenderer.material = markerMat;
                     }
                 }
             }
 
-            Debug.Log($"[MapGenerator] Spawned {WorldMap.Count} debug cubes (no TileVisualConfig).");
+            Debug.Log($"[MapGenerator] Spawned {WorldMap.Count} hex tiles (debug mode).");
         }
 
         /// <summary>
