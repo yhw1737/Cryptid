@@ -112,9 +112,15 @@ namespace Cryptid.Systems.Map
                     float detail = Mathf.PerlinNoise(dx, dy);
 
                     // Blend primary + detail
-                    float value = Mathf.Clamp01(
-                        noise * (1f - config.DetailWeight) +
-                        detail * config.DetailWeight);
+                    float blended = noise * (1f - config.DetailWeight) +
+                                    detail * config.DetailWeight;
+
+                    // Redistribute to stretch toward 0 and 1
+                    // Perlin noise clusters near 0.5; power curve spreads it out
+                    float centered = (blended - 0.5f) * 2f; // [-1, 1]
+                    float sign = Mathf.Sign(centered);
+                    float stretched = sign * Mathf.Pow(Mathf.Abs(centered), 0.7f);
+                    float value = Mathf.Clamp01((stretched + 1f) * 0.5f); // back to [0, 1]
 
                     // Map noise value to terrain type via thresholds
                     TerrainType terrain = NoiseToBiome(value, config);

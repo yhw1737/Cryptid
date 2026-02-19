@@ -345,6 +345,9 @@ namespace Cryptid.Systems.Map
                             foreach (var col in deco.GetComponentsInChildren<Collider>())
                                 Destroy(col);
 
+                            // Fix materials: asset packs use Built-in shader → URP pink
+                            EnsureURPMaterials(deco, urpLit);
+
                             decoCount++;
                         }
                     }
@@ -430,6 +433,8 @@ namespace Cryptid.Systems.Map
                 // Remove colliders so hover is not blocked
                 foreach (var col in stone.GetComponentsInChildren<Collider>())
                     Destroy(col);
+
+                EnsureURPMaterials(stone, urpLit);
             }
             else
             {
@@ -512,6 +517,56 @@ namespace Cryptid.Systems.Map
             var r = marker.GetComponent<Renderer>();
             var m = new Material(urpLit) { color = animalColor };
             r.material = m;
+        }
+
+        /// <summary>
+        /// Converts all materials on a GameObject hierarchy from Built-in Standard
+        /// to URP/Lit, preserving the original base color and texture.
+        /// Fixes the purple/magenta rendering caused by shader incompatibility.
+        /// </summary>
+        private void EnsureURPMaterials(GameObject obj, Shader urpLit)
+        {
+            foreach (var renderer in obj.GetComponentsInChildren<Renderer>())
+            {
+                var materials = renderer.materials;
+                bool changed = false;
+
+                for (int i = 0; i < materials.Length; i++)
+                {
+                    var mat = materials[i];
+                    if (mat == null) continue;
+
+                    // Skip if already using URP shader
+                    if (mat.shader != null && mat.shader.name.Contains("Universal Render Pipeline"))
+                        continue;
+
+                    // Extract original color and texture before replacing shader
+                    Color originalColor = Color.white;
+                    Texture mainTex = null;
+
+                    if (mat.HasProperty("_Color"))
+                        originalColor = mat.color;
+                    else if (mat.HasProperty("_BaseColor"))
+                        originalColor = mat.GetColor("_BaseColor");
+
+                    if (mat.HasProperty("_MainTex"))
+                        mainTex = mat.mainTexture;
+                    else if (mat.HasProperty("_BaseMap"))
+                        mainTex = mat.GetTexture("_BaseMap");
+
+                    // Create new URP material
+                    var newMat = new Material(urpLit);
+                    newMat.color = originalColor;
+                    if (mainTex != null)
+                        newMat.mainTexture = mainTex;
+
+                    materials[i] = newMat;
+                    changed = true;
+                }
+
+                if (changed)
+                    renderer.materials = materials;
+            }
         }
 
         /// <summary>
