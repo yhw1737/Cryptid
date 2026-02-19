@@ -99,6 +99,13 @@ namespace Cryptid.Systems.Turn
         /// <summary> Fired when a search is performed. Args: (playerIndex, tileCoords, isCorrect). </summary>
         public event Action<int, HexCoordinates, bool> OnSearchPerformed;
 
+        /// <summary>
+        /// Fired for each opponent's penalty reveal after a failed search.
+        /// Args: (respondingPlayer, tileCoords, clueMatches).
+        /// All opponents must reveal their clue result for the searched tile.
+        /// </summary>
+        public event Action<int, HexCoordinates, bool> OnSearchPenalty;
+
         /// <summary> Fired when a player wins. Arg: winnerIndex. </summary>
         public event Action<int> OnGameWon;
 
@@ -211,7 +218,7 @@ namespace Cryptid.Systems.Turn
             // Evaluate the clue
             bool result = clue.Check(tile, worldMap);
 
-            string resultStr = result ? "YES (cube)" : "NO (disc)";
+            string resultStr = result ? "YES (disc)" : "NO (cube)";
             Debug.Log($"[TurnManager] Player {_questionTargetPlayer + 1} responds: {resultStr} " +
                      $"(Clue: {clue.Description})");
 
@@ -223,7 +230,8 @@ namespace Cryptid.Systems.Turn
 
         /// <summary>
         /// Player performs a Search: guesses the Cryptid's location.
-        /// If correct, they win. If wrong, they're penalized (in full game, eliminated).
+        /// If correct, they win. If wrong, all opponents reveal their clue
+        /// for that tile (penalty tokens placed via OnSearchPenalty).
         /// </summary>
         public void SubmitSearch(HexCoordinates tileCoords)
         {
@@ -246,7 +254,38 @@ namespace Cryptid.Systems.Turn
             {
                 Debug.Log($"[TurnManager] Player {_currentPlayerIndex + 1} searched {tileCoords} — WRONG! " +
                          $"(Answer was {_puzzle.AnswerTile.Coordinates})");
+                // Penalty: notify that each opponent must reveal their clue result
+                // The actual evaluation is done externally via ApplySearchPenalty()
                 EndTurn();
+            }
+        }
+
+        /// <summary>
+        /// Applies the search penalty: evaluates every player's clue (except the
+        /// searcher) on the given tile and fires OnSearchPenalty for each.
+        /// Should be called by the game controller after OnSearchPerformed(isCorrect=false).
+        /// </summary>
+        public void ApplySearchPenalty(HexCoordinates tileCoords, int searcherIndex,
+            IReadOnlyDictionary<HexCoordinates, WorldTile> worldMap)
+        {
+            if (!worldMap.TryGetValue(tileCoords, out WorldTile tile))
+            {
+                Debug.LogError($"[TurnManager] Penalty: Tile {tileCoords} not found!");
+                return;
+            }
+
+            for (int i = 0; i < _playerCount; i++)
+            {
+                if (i == searcherIndex) continue;
+
+                var clue = _puzzle.PlayerClues[i];
+                bool result = clue.Check(tile, worldMap);
+
+                string tokenStr = result ? "disc" : "cube";
+                Debug.Log($"[TurnManager] Penalty: Player {i + 1} reveals {tokenStr} " +
+                         $"at {tileCoords} (Clue: {clue.Description})");
+
+                OnSearchPenalty?.Invoke(i, tileCoords, result);
             }
         }
 

@@ -45,6 +45,7 @@ namespace Cryptid.UI
         private PlayerSelectPanel _playerSelect;
         private CluePanel _cluePanel;
         private GameOverPanel _gameOverPanel;
+        private GameLogPanel _gameLogPanel;
 
         // ---------------------------------------------------------
         // Bound game state (set via Bind methods)
@@ -54,6 +55,9 @@ namespace Cryptid.UI
         private TurnManager _turnManager;
         private PuzzleSetup _puzzle;
         private int _playerCount;
+
+        /// <summary>Index of the human player. Action buttons only show for this player.</summary>
+        public int HumanPlayerIndex { get; set; } = 0;
 
         // ---------------------------------------------------------
         // Public API
@@ -66,6 +70,9 @@ namespace Cryptid.UI
         /// </summary>
         public int SelectedTargetPlayer =>
             _playerSelect != null ? _playerSelect.SelectedTarget : -1;
+
+        /// <summary>The game log panel, used by external systems to add entries.</summary>
+        public GameLogPanel LogPanel => _gameLogPanel;
 
         /// <summary>
         /// Called by GameBootstrapper after FSM is created.
@@ -153,6 +160,12 @@ namespace Cryptid.UI
             _gameOverPanel.Build(overRoot);
             _gameOverPanel.OnRestartClicked += HandleRestartClicked;
 
+            // Game Log Panel (right-side scrolling log)
+            var logRoot = UIFactory.CreatePanel(_canvas.transform,
+                "GameLogPanel", UIFactory.PanelBg);
+            _gameLogPanel = logRoot.gameObject.AddComponent<GameLogPanel>();
+            _gameLogPanel.Build(logRoot);
+
             // Initially hide all gameplay panels
             ShowLobbyState();
         }
@@ -169,6 +182,7 @@ namespace Cryptid.UI
             _playerSelect.Hide();
             _cluePanel.gameObject.SetActive(false);
             _gameOverPanel.Hide();
+            _gameLogPanel.gameObject.SetActive(false);
         }
 
         private void HandleStateChanged(GamePhase oldPhase, GamePhase newPhase)
@@ -186,7 +200,9 @@ namespace Cryptid.UI
                 case GamePhase.Playing:
                     _turnIndicator.gameObject.SetActive(true);
                     _cluePanel.gameObject.SetActive(true);
+                    _gameLogPanel.gameObject.SetActive(true);
                     _gameOverPanel.Hide();
+                    _gameLogPanel.AddSystemMessage("=== Game Started ===");
                     break;
 
                 case GamePhase.GameOver:
@@ -206,8 +222,15 @@ namespace Cryptid.UI
             _turnIndicator.UpdateDisplay(
                 _turnManager.TurnNumber, playerIndex, _turnManager.CurrentPhase);
 
-            // Show action buttons (ChooseAction phase)
-            _actionPanel.UpdateForPhase(TurnPhase.ChooseAction);
+            // Only show action buttons for the human player
+            if (playerIndex == HumanPlayerIndex)
+            {
+                _actionPanel.UpdateForPhase(TurnPhase.ChooseAction);
+            }
+            else
+            {
+                _actionPanel.gameObject.SetActive(false);
+            }
             _playerSelect.Hide();
 
             // Update clue panel for the current player
@@ -215,6 +238,10 @@ namespace Cryptid.UI
             {
                 _cluePanel.UpdateClue(playerIndex, _puzzle.PlayerClues[playerIndex].Description);
             }
+
+            // Log
+            _gameLogPanel.AddEntry(playerIndex,
+                $"--- Turn {_turnManager.TurnNumber}: Player {playerIndex + 1} ---");
         }
 
         private void HandlePhaseChanged(int playerIndex, TurnPhase phase)
@@ -222,38 +249,53 @@ namespace Cryptid.UI
             // Update HUD phase text
             _turnIndicator.UpdateDisplay(_turnManager.TurnNumber, playerIndex, phase);
 
-            // Toggle action panel visibility
-            _actionPanel.UpdateForPhase(phase);
-
-            // Show/hide player select panel
-            if (phase == TurnPhase.SelectTile)
+            // Only show action UI for the human player
+            if (playerIndex == HumanPlayerIndex)
             {
-                int defaultTarget = (playerIndex + 1) % _playerCount;
-                _playerSelect.Show(playerIndex, defaultTarget, _playerCount);
+                _actionPanel.UpdateForPhase(phase);
+
+                // Show player select panel for human's Question
+                if (phase == TurnPhase.SelectTile)
+                {
+                    int defaultTarget = (playerIndex + 1) % _playerCount;
+                    _playerSelect.Show(playerIndex, defaultTarget, _playerCount);
+                }
+                else
+                {
+                    _playerSelect.Hide();
+                }
             }
             else
             {
+                _actionPanel.gameObject.SetActive(false);
                 _playerSelect.Hide();
             }
         }
 
         private void HandleQuestionAsked(int asking, int target, HexCoordinates tile)
         {
-            // Future: could add a toast / log panel entry
-            Debug.Log($"[UI] Player {asking + 1} asks Player {target + 1} about {tile}");
+            _gameLogPanel.AddEntry(asking,
+                $"P{asking + 1} asks P{target + 1}: \"{tile}\"");
         }
 
         private void HandleResponseGiven(int responding, HexCoordinates tile, bool result)
         {
-            string answer = result ? "YES (cube)" : "NO (disc)";
-            Debug.Log($"[UI] Player {responding + 1} responds: {answer}");
+            string token = result ? "disc" : "cube";
+            _gameLogPanel.AddEntry(responding,
+                $"P{responding + 1} responds: {(result ? "YES" : "NO")} ({token})");
         }
 
         private void HandleSearchPerformed(int player, HexCoordinates tile, bool correct)
         {
-            if (!correct)
+            if (correct)
             {
-                Debug.Log($"[UI] Player {player + 1} searched wrong tile.");
+                _gameLogPanel.AddEntry(player,
+                    $"P{player + 1} searches {tile} - CORRECT!");
+            }
+            else
+            {
+                _gameLogPanel.AddEntry(player,
+                    $"P{player + 1} searches {tile} - WRONG!");
             }
         }
 
