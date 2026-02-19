@@ -261,8 +261,8 @@ namespace Cryptid.Core
         {
             if (_tokenPlacer == null) return;
 
-            // Place token: Cube if yes, Disc if no
-            TokenType tokenType = result ? TokenType.Cube : TokenType.Disc;
+            // Place token: Disc if clue matches (yes), Cube if not (no)
+            TokenType tokenType = result ? TokenType.Disc : TokenType.Cube;
             _tokenPlacer.PlaceTokenAt(tile, tokenType, respondingPlayer);
         }
 
