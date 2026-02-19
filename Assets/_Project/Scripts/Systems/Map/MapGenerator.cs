@@ -6,16 +6,27 @@ using UnityEngine;
 namespace Cryptid.Systems.Map
 {
     /// <summary>
-    /// Assembles MapPieceData into a unified world map.
-    /// Reads a MapAssemblyConfig, applies rotation and translation to each piece,
-    /// and produces a Dictionary of global HexCoordinates -> WorldTile.
-    /// 
+    /// Assembles the world map from either:
+    ///   A) MapPieceData (legacy) via MapAssemblyConfig
+    ///   B) Procedural generation via ProceduralMapConfig (Spec 5.1)
     /// Also handles spawning visual prefabs via TileVisualConfig.
     /// </summary>
     public class MapGenerator : MonoBehaviour
     {
-        [Header("Data")]
+        [Header("Generation Mode")]
+        [Tooltip("true = procedural (Spec 5.1), false = legacy MapPiece assembly")]
+        [SerializeField] private bool _useProcedural = true;
+
+        [Header("Procedural Config")]
+        [SerializeField] private ProceduralMapConfig _proceduralConfig;
+
+        [Tooltip("Random seed for procedural generation (-1 = random)")]
+        [SerializeField] private int _mapSeed = -1;
+
+        [Header("Legacy (MapPiece) Config")]
         [SerializeField] private MapAssemblyConfig _assemblyConfig;
+
+        [Header("Visuals")]
         [SerializeField] private TileVisualConfig _visualConfig;
 
         [Header("Generation Options")]
@@ -56,12 +67,78 @@ namespace Cryptid.Systems.Map
         /// <summary>
         /// Reads all PiecePlacements from the config, transforms local tile
         /// coordinates to global coordinates, and populates the WorldMap dictionary.
+        /// If _useProcedural is true, delegates to ProceduralMapBuilder instead.
         /// </summary>
         [ContextMenu("Generate Map (Data Only)")]
         public void GenerateMap()
         {
             WorldMap.Clear();
 
+            if (_useProcedural)
+            {
+                GenerateProceduralMap();
+                return;
+            }
+
+            GenerateLegacyMap();
+        }
+
+        /// <summary>
+        /// Procedural map generation using Perlin Noise (Spec 5.1.B).
+        /// </summary>
+        private void GenerateProceduralMap()
+        {
+            if (_proceduralConfig == null)
+            {
+                Debug.LogError("[MapGenerator] No ProceduralMapConfig assigned! " +
+                              "Create one via Assets > Create > Cryptid > Procedural Map Config.");
+                return;
+            }
+
+            var result = ProceduralMapBuilder.Build(_proceduralConfig, _mapSeed);
+            if (result == null)
+            {
+                Debug.LogError("[MapGenerator] Procedural map generation failed!");
+                return;
+            }
+
+            foreach (var kvp in result)
+                WorldMap[kvp.Key] = kvp.Value;
+
+            LogTerrainStats();
+        }
+
+        /// <summary>
+        /// Logs terrain/structure/animal distribution for debug verification.
+        /// </summary>
+        private void LogTerrainStats()
+        {
+            var terrainCounts = new Dictionary<TerrainType, int>();
+            int structures = 0;
+            int animals = 0;
+
+            foreach (var tile in WorldMap.Values)
+            {
+                if (!terrainCounts.ContainsKey(tile.Terrain))
+                    terrainCounts[tile.Terrain] = 0;
+                terrainCounts[tile.Terrain]++;
+
+                if (tile.Structure != StructureType.None) structures++;
+                if (tile.Animal != AnimalType.None) animals++;
+            }
+
+            string stats = $"[MapGenerator] Procedural map: {WorldMap.Count} tiles | ";
+            foreach (var kvp in terrainCounts)
+                stats += $"{kvp.Key}:{kvp.Value} ";
+            stats += $"| Structures:{structures} Animals:{animals}";
+            Debug.Log(stats);
+        }
+
+        /// <summary>
+        /// Legacy map assembly from MapPieceData ScriptableObjects.
+        /// </summary>
+        private void GenerateLegacyMap()
+        {
             if (_assemblyConfig == null)
             {
                 Debug.LogError("[MapGenerator] No MapAssemblyConfig assigned!");
