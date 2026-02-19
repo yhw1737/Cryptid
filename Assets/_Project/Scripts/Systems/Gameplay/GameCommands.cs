@@ -1,4 +1,6 @@
+using System.Collections.Generic;
 using Cryptid.Core;
+using Cryptid.Data;
 using Cryptid.Systems.Turn;
 
 namespace Cryptid.Systems.Gameplay
@@ -62,19 +64,22 @@ namespace Cryptid.Systems.Gameplay
     {
         private readonly TurnManager _turnManager;
         private readonly HexCoordinates _tileCoords;
+        private readonly IReadOnlyDictionary<HexCoordinates, WorldTile> _worldMap;
 
         public string Description =>
             $"Player {_turnManager.CurrentPlayerIndex + 1}: Search at {_tileCoords}";
 
-        public SearchCommand(TurnManager turnManager, HexCoordinates tileCoords)
+        public SearchCommand(TurnManager turnManager, HexCoordinates tileCoords,
+            IReadOnlyDictionary<HexCoordinates, WorldTile> worldMap)
         {
             _turnManager = turnManager;
             _tileCoords = tileCoords;
+            _worldMap = worldMap;
         }
 
         public void Execute()
         {
-            _turnManager.SubmitSearch(_tileCoords);
+            _turnManager.SubmitSearch(_tileCoords, _worldMap);
         }
 
         public void Undo()
