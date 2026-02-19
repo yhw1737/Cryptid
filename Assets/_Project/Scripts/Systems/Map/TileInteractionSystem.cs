@@ -82,8 +82,9 @@ namespace Cryptid.Systems.Map
 
             if (Physics.Raycast(ray, out RaycastHit hit, 100f, _tileLayerMask))
             {
-                // Try to get HexTile from hit object
-                if (hit.collider.TryGetComponent<HexTile>(out var tile))
+                // Try to get HexTile from hit object or its parent (structures are children)
+                var tile = hit.collider.GetComponentInParent<HexTile>();
+                if (tile != null)
                 {
                     if (tile != _currentHovered)
                     {

@@ -250,63 +250,268 @@ namespace Cryptid.Systems.Map
         }
 
         /// <summary>
-        /// Spawns colored hex tiles when no TileVisualConfig is available.
-        /// Uses procedural hex mesh with terrain-based coloring.
-        /// Structures are shown as small spheres on top.
+        /// Spawns enriched hex tile visuals with:
+        ///   1. Hex prism base (terrain-colored)
+        ///   2. Terrain decorations from MapDecorationDatabase (trees, rocks, etc.)
+        ///   3. Structure models (StandingStone from asset, AbandonedShack placeholder)
+        ///   4. Animal territory markers (colored capsules with labels)
+        /// Water tiles are slightly lowered for visual depth.
         /// </summary>
         private void SpawnDebugCubes()
         {
-            Transform container = GetOrCreateContainer();
+            MapDecorationDatabase.Load();
 
-            // Generate hex mesh once and reuse for all tiles
+            Transform container = GetOrCreateContainer();
+            var rng = new System.Random(_mapSeed >= 0 ? _mapSeed + 999 : System.Environment.TickCount);
+
+            // Shared hex meshes (water is thinner + lowered)
             Mesh hexMesh = HexMeshGenerator.CreateHexPrismMesh(0.1f);
+            Mesh waterMesh = HexMeshGenerator.CreateHexPrismMesh(0.04f);
+
+            // Shared URP material template
+            Shader urpLit = Shader.Find("Universal Render Pipeline/Lit");
+
+            int decoCount = 0;
 
             foreach (var kvp in WorldMap)
             {
                 Vector3 worldPos = HexMetrics.HexToWorldPosition(kvp.Key);
                 WorldTile tile = kvp.Value;
 
-                // Create hex tile object with mesh
+                bool isWater = tile.Terrain == TerrainType.Water;
+
+                // ── 1. Hex base ──────────────────────────────────
                 var hexObj = new GameObject($"HexTile_{kvp.Key}_{tile.Terrain}");
-                hexObj.transform.position = worldPos;
+                hexObj.transform.position = isWater
+                    ? worldPos + Vector3.down * 0.05f
+                    : worldPos;
                 hexObj.transform.SetParent(container);
 
                 var meshFilter = hexObj.AddComponent<MeshFilter>();
-                meshFilter.sharedMesh = hexMesh;
+                meshFilter.sharedMesh = isWater ? waterMesh : hexMesh;
 
                 var meshRenderer = hexObj.AddComponent<MeshRenderer>();
-                var mat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+                var mat = new Material(urpLit);
                 mat.color = TileVisualConfig.GetTerrainDebugColor(tile.Terrain);
+
+                // Water gets semi-transparency
+                if (isWater)
+                {
+                    mat.SetFloat("_Surface", 1); // Transparent
+                    mat.SetFloat("_Blend", 0);
+                    mat.SetOverrideTag("RenderType", "Transparent");
+                    mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+                    mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+                    mat.SetInt("_ZWrite", 0);
+                    mat.DisableKeyword("_ALPHATEST_ON");
+                    mat.EnableKeyword("_ALPHABLEND_ON");
+                    mat.renderQueue = 3000;
+                    var c = mat.color;
+                    c.a = 0.75f;
+                    mat.color = c;
+                }
+
                 meshRenderer.material = mat;
 
-                // Add collider for future raycasting
+                // Collider for raycasting
                 var meshCollider = hexObj.AddComponent<MeshCollider>();
-                meshCollider.sharedMesh = hexMesh;
+                meshCollider.sharedMesh = isWater ? waterMesh : hexMesh;
 
-                // Add HexTile component for interaction
+                // HexTile component for interaction
                 var hexTile = hexObj.AddComponent<HexTile>();
                 hexTile.Initialize(tile);
 
-                // Add small sphere for structures
+                // ── 2. Terrain decorations ───────────────────────
+                if (!isWater)
+                {
+                    int decoAmount = GetDecorationCount(tile.Terrain, rng);
+                    for (int i = 0; i < decoAmount; i++)
+                    {
+                        GameObject decoPrefab = MapDecorationDatabase.GetRandomDecoration(tile.Terrain, rng);
+                        if (decoPrefab != null)
+                        {
+                            // Random position within hex (inner radius)
+                            Vector2 offset = RandomPointInHex(rng, HexMetrics.InnerRadius * 0.6f);
+                            Vector3 decoPos = worldPos + new Vector3(offset.x, 0.1f, offset.y);
+                            float yRot = (float)(rng.NextDouble() * 360.0);
+                            float scale = 0.15f + (float)(rng.NextDouble() * 0.1);
+
+                            GameObject deco = Instantiate(decoPrefab, decoPos,
+                                Quaternion.Euler(0f, yRot, 0f), hexObj.transform);
+                            deco.transform.localScale = Vector3.one * scale;
+                            deco.name = $"Deco_{decoPrefab.name}";
+
+                            // Remove colliders on decoration so hover works on hex base
+                            foreach (var col in deco.GetComponentsInChildren<Collider>())
+                                Destroy(col);
+
+                            decoCount++;
+                        }
+                    }
+                }
+
+                // ── 3. Structure ──────────────────────────────────
                 if (tile.Structure != StructureType.None)
                 {
-                    GameObject marker = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                    marker.transform.position = worldPos + Vector3.up * 0.25f;
-                    marker.transform.localScale = Vector3.one * 0.3f;
-                    marker.transform.SetParent(hexObj.transform);
-                    marker.name = $"Structure_{tile.Structure}";
+                    SpawnStructure(tile.Structure, worldPos, hexObj.transform, urpLit);
+                }
 
-                    var markerRenderer = marker.GetComponent<Renderer>();
-                    if (markerRenderer != null)
-                    {
-                        var markerMat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
-                        markerMat.color = Color.red;
-                        markerRenderer.material = markerMat;
-                    }
+                // ── 4. Animal territory marker ───────────────────
+                if (tile.Animal != AnimalType.None)
+                {
+                    SpawnAnimalMarker(tile.Animal, worldPos, hexObj.transform, urpLit);
                 }
             }
 
-            Debug.Log($"[MapGenerator] Spawned {WorldMap.Count} hex tiles (debug mode).");
+            Debug.Log($"[MapGenerator] Spawned {WorldMap.Count} hex tiles " +
+                      $"with {decoCount} decorations (enriched mode).");
+        }
+
+        // ---------------------------------------------------------
+        // Decoration Helpers
+        // ---------------------------------------------------------
+
+        /// <summary>
+        /// Returns how many decoration objects to spawn per terrain type.
+        /// Forest gets the most, desert the least.
+        /// </summary>
+        private int GetDecorationCount(TerrainType terrain, System.Random rng)
+        {
+            return terrain switch
+            {
+                TerrainType.Forest   => 1 + rng.Next(3),   // 1-3
+                TerrainType.Swamp    => 1 + rng.Next(2),   // 1-2
+                TerrainType.Mountain => 1 + rng.Next(2),   // 1-2
+                TerrainType.Desert   => rng.Next(2),        // 0-1
+                _                    => 0
+            };
+        }
+
+        /// <summary>
+        /// Returns a random 2D point within a hexagon of given radius.
+        /// Uses rejection sampling on the hex boundary.
+        /// </summary>
+        private Vector2 RandomPointInHex(System.Random rng, float radius)
+        {
+            // Simple approach: random in circle, good enough for hex
+            float angle = (float)(rng.NextDouble() * Mathf.PI * 2f);
+            float r = radius * Mathf.Sqrt((float)rng.NextDouble());
+            return new Vector2(r * Mathf.Cos(angle), r * Mathf.Sin(angle));
+        }
+
+        /// <summary>
+        /// Spawns a 3D structure model on a tile.
+        /// StandingStone uses asset from MapDecorationDatabase.
+        /// AbandonedShack uses a procedural box+roof placeholder.
+        /// </summary>
+        private void SpawnStructure(StructureType type, Vector3 worldPos,
+                                    Transform parent, Shader urpLit)
+        {
+            if (type == StructureType.StandingStone)
+            {
+                SpawnStandingStone(worldPos, parent, urpLit);
+            }
+            else if (type == StructureType.AbandonedShack)
+            {
+                SpawnAbandonedShack(worldPos, parent, urpLit);
+            }
+        }
+
+        private void SpawnStandingStone(Vector3 worldPos, Transform parent, Shader urpLit)
+        {
+            GameObject prefab = MapDecorationDatabase.GetStandingStonePrefab();
+            if (prefab != null)
+            {
+                Vector3 pos = worldPos + Vector3.up * 0.1f;
+                GameObject stone = Instantiate(prefab, pos, Quaternion.identity, parent);
+                stone.transform.localScale = Vector3.one * 0.3f;
+                stone.name = "Structure_StandingStone";
+
+                // Remove colliders so hover is not blocked
+                foreach (var col in stone.GetComponentsInChildren<Collider>())
+                    Destroy(col);
+            }
+            else
+            {
+                // Fallback: tall thin cylinder
+                var pillar = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                pillar.transform.position = worldPos + Vector3.up * 0.35f;
+                pillar.transform.localScale = new Vector3(0.12f, 0.35f, 0.12f);
+                pillar.transform.SetParent(parent);
+                pillar.name = "Structure_StandingStone_Fallback";
+
+                Destroy(pillar.GetComponent<Collider>());
+
+                var r = pillar.GetComponent<Renderer>();
+                var m = new Material(urpLit) { color = new Color(0.5f, 0.52f, 0.48f) };
+                r.material = m;
+            }
+        }
+
+        private void SpawnAbandonedShack(Vector3 worldPos, Transform parent, Shader urpLit)
+        {
+            var shackRoot = new GameObject("Structure_AbandonedShack");
+            shackRoot.transform.position = worldPos;
+            shackRoot.transform.SetParent(parent);
+
+            Material woodMat = new Material(urpLit)
+            {
+                color = new Color(0.45f, 0.30f, 0.18f) // Dark brown wood
+            };
+            Material roofMat = new Material(urpLit)
+            {
+                color = new Color(0.35f, 0.22f, 0.12f) // Darker brown roof
+            };
+
+            // Walls (box)
+            var walls = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            walls.transform.SetParent(shackRoot.transform);
+            walls.transform.localPosition = Vector3.up * 0.25f;
+            walls.transform.localScale = new Vector3(0.35f, 0.25f, 0.3f);
+            walls.name = "Walls";
+            Destroy(walls.GetComponent<Collider>());
+            walls.GetComponent<Renderer>().material = woodMat;
+
+            // Roof (rotated cube as triangle-ish roof)
+            var roof = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            roof.transform.SetParent(shackRoot.transform);
+            roof.transform.localPosition = Vector3.up * 0.45f;
+            roof.transform.localScale = new Vector3(0.4f, 0.15f, 0.35f);
+            roof.transform.localRotation = Quaternion.Euler(0f, 0f, 45f);
+            roof.name = "Roof";
+            Destroy(roof.GetComponent<Collider>());
+            roof.GetComponent<Renderer>().material = roofMat;
+        }
+
+        /// <summary>
+        /// Spawns a colored capsule as an animal territory marker.
+        /// Bear = brown, Cougar = tan/sandy.
+        /// </summary>
+        private void SpawnAnimalMarker(AnimalType animal, Vector3 worldPos,
+                                       Transform parent, Shader urpLit)
+        {
+            // Position at tile edge so it doesn't overlap structure
+            Vector3 markerPos = worldPos + new Vector3(0.3f, 0.2f, 0.3f);
+
+            var marker = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+            marker.transform.position = markerPos;
+            marker.transform.localScale = new Vector3(0.12f, 0.15f, 0.12f);
+            marker.transform.SetParent(parent);
+            marker.name = $"Animal_{animal}";
+
+            // Remove collider so hover is not blocked
+            Destroy(marker.GetComponent<Collider>());
+
+            Color animalColor = animal switch
+            {
+                AnimalType.Bear   => new Color(0.55f, 0.33f, 0.14f), // Brown
+                AnimalType.Cougar => new Color(0.82f, 0.71f, 0.45f), // Sandy tan
+                _                 => Color.magenta
+            };
+
+            var r = marker.GetComponent<Renderer>();
+            var m = new Material(urpLit) { color = animalColor };
+            r.material = m;
         }
 
         /// <summary>
