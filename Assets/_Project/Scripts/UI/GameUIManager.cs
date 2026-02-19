@@ -57,7 +57,9 @@ namespace Cryptid.UI
         private int _playerCount;
 
         /// <summary>Index of the human player. Action buttons only show for this player.</summary>
-        public int HumanPlayerIndex { get; set; } = 0;
+        // All players are human-controlled in local mode.
+        // HumanPlayerIndex is kept for future network mode.
+        public int HumanPlayerIndex { get; set; } = -1;
 
         // ---------------------------------------------------------
         // Public API
@@ -222,15 +224,8 @@ namespace Cryptid.UI
             _turnIndicator.UpdateDisplay(
                 _turnManager.TurnNumber, playerIndex, _turnManager.CurrentPhase);
 
-            // Only show action buttons for the human player
-            if (playerIndex == HumanPlayerIndex)
-            {
-                _actionPanel.UpdateForPhase(TurnPhase.ChooseAction);
-            }
-            else
-            {
-                _actionPanel.gameObject.SetActive(false);
-            }
+            // Show action buttons for all players in local mode
+            _actionPanel.UpdateForPhase(TurnPhase.ChooseAction);
             _playerSelect.Hide();
 
             // Update clue panel for the current player
@@ -249,25 +244,16 @@ namespace Cryptid.UI
             // Update HUD phase text
             _turnIndicator.UpdateDisplay(_turnManager.TurnNumber, playerIndex, phase);
 
-            // Only show action UI for the human player
-            if (playerIndex == HumanPlayerIndex)
-            {
-                _actionPanel.UpdateForPhase(phase);
+            // Show action UI for all players in local mode
+            _actionPanel.UpdateForPhase(phase);
 
-                // Show player select panel for human's Question
-                if (phase == TurnPhase.SelectTile)
-                {
-                    int defaultTarget = (playerIndex + 1) % _playerCount;
-                    _playerSelect.Show(playerIndex, defaultTarget, _playerCount);
-                }
-                else
-                {
-                    _playerSelect.Hide();
-                }
+            if (phase == TurnPhase.SelectTile)
+            {
+                int defaultTarget = (playerIndex + 1) % _playerCount;
+                _playerSelect.Show(playerIndex, defaultTarget, _playerCount);
             }
             else
             {
-                _actionPanel.gameObject.SetActive(false);
                 _playerSelect.Hide();
             }
         }

@@ -8,6 +8,13 @@
 # -----------------------------------------------
 @AGENT_RULES.md
 @DEVELOPMENT_SPEC.md
+@CONSOLE_ERRORS.md
+
+# -----------------------------------------------
+# Unused Systems (kept locally for reference)
+# -----------------------------------------------
+Assets/_Project/Scripts/Systems/Gameplay/SimpleAIPlayer.cs
+Assets/_Project/Scripts/Systems/Gameplay/SimpleAIPlayer.cs.meta
 
 # -----------------------------------------------
 # Unity Generated

@@ -1,8 +1,6 @@
-using System.Collections;
 using Cryptid.Core;
 using Cryptid.Data;
 using Cryptid.Systems.Clue;
-using Cryptid.Systems.Gameplay;
 using Cryptid.Systems.Map;
 using Cryptid.Systems.Turn;
 using Cryptid.UI;
@@ -61,11 +59,9 @@ namespace Cryptid.Core
         private TurnManager _turnManager;
         private PuzzleSetup _currentPuzzle;
         private PuzzleGenerator _puzzleGenerator;
-        private SimpleAIPlayer _aiPlayer;
         private LobbyState _lobbyState;
         private PlayingState _playingState;
         private GameOverState _gameOverState;
-        private bool _isAITurnInProgress;
 
         // ---------------------------------------------------------
         // Lifecycle
@@ -154,7 +150,6 @@ namespace Cryptid.Core
                 _uiManager.OnRestartRequested -= HandleRestart;
             }
 
-            _aiPlayer?.Dispose();
             GameService.ClearAll();
         }
 
@@ -199,12 +194,6 @@ namespace Cryptid.Core
             // Bind UI to gameplay systems
             _uiManager.BindGameplay(_turnManager, _currentPuzzle, _playerCount);
 
-            // Create AI player for single-player mode
-            _aiPlayer = new SimpleAIPlayer(_turnManager, _currentPuzzle,
-                _mapGenerator.WorldMap, _puzzleSeed >= 0 ? _puzzleSeed + 1 : (int?)null);
-            _aiPlayer.HumanPlayerIndex = 0;
-            _aiPlayer.OnAIActionReady += HandleAIAction;
-
             Debug.Log("[GameBootstrapper] Setup complete. Puzzle ready.");
         }
 
@@ -239,9 +228,6 @@ namespace Cryptid.Core
         {
             if (_fsm.CurrentPhase != GamePhase.Playing || _turnManager == null) return;
             if (tile == null) return;
-            // Block interaction during AI turns
-            if (_isAITurnInProgress) return;
-            if (_turnManager.CurrentPlayerIndex != 0) return; // Only human (P1) can click
 
             switch (_turnManager.CurrentPhase)
             {
@@ -289,13 +275,6 @@ namespace Cryptid.Core
             if (!isCorrect)
             {
                 Debug.Log($"[GameBootstrapper] Wrong search! Player {playerIndex + 1} must place penalty cube.");
-                // PenaltyPlacement phase is now active — handled via tile click or AI auto-pick
-
-                // If it's an AI player, auto-select penalty tile
-                if (playerIndex != 0 && _turnManager.CurrentPhase == TurnPhase.PenaltyPlacement)
-                {
-                    StartCoroutine(ExecuteAIPenaltyCoroutine(playerIndex));
-                }
             }
         }
 
@@ -317,40 +296,6 @@ namespace Cryptid.Core
             }
         }
 
-        /// <summary>
-        /// Auto-picks a penalty tile for an AI player that failed a search.
-        /// Selects a random tile where the AI's own clue does NOT match.
-        /// </summary>
-        private IEnumerator ExecuteAIPenaltyCoroutine(int playerIndex)
-        {
-            float delay = _aiPlayer?.ActionDelay ?? 0.6f;
-            yield return new WaitForSeconds(delay);
-
-            if (_turnManager == null || _turnManager.CurrentPhase != TurnPhase.PenaltyPlacement)
-                yield break;
-
-            // Find tiles that do NOT match this player's clue
-            var clue = _currentPuzzle.PlayerClues[playerIndex];
-            var candidates = new System.Collections.Generic.List<HexCoordinates>();
-
-            foreach (var kvp in _mapGenerator.WorldMap)
-            {
-                if (!clue.Check(kvp.Value, _mapGenerator.WorldMap))
-                    candidates.Add(kvp.Key);
-            }
-
-            if (candidates.Count > 0)
-            {
-                var rng = new System.Random();
-                var penaltyTile = candidates[rng.Next(candidates.Count)];
-                _turnManager.SubmitPenaltyCube(penaltyTile, _mapGenerator.WorldMap);
-            }
-            else
-            {
-                Debug.LogError($"[GameBootstrapper] AI P{playerIndex + 1} has no non-matching tiles for penalty!");
-            }
-        }
-
         private void HandleGameWon(int winnerIndex)
         {
             _gameOverState.WinnerIndex = winnerIndex;
@@ -362,8 +307,7 @@ namespace Cryptid.Core
         /// </summary>
         private void HandleUIActionChosen(PlayerAction action)
         {
-            if (_turnManager != null && _turnManager.CurrentPhase == TurnPhase.ChooseAction
-                && !_isAITurnInProgress && _turnManager.CurrentPlayerIndex == 0)
+            if (_turnManager != null && _turnManager.CurrentPhase == TurnPhase.ChooseAction)
             {
                 _turnManager.ChooseAction(action);
             }
@@ -375,84 +319,8 @@ namespace Cryptid.Core
         /// </summary>
         private void HandleRestart()
         {
-            _aiPlayer?.Dispose();
             GameService.ClearAll();
             SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
-        }
-
-        // ---------------------------------------------------------
-        // AI Player Integration
-        // ---------------------------------------------------------
-
-        /// <summary>
-        /// Handles the AI's decision. Executes the action with a short delay
-        /// so the human player can see what's happening.
-        /// </summary>
-        private void HandleAIAction(int playerIndex, PlayerAction action,
-            HexCoordinates tile, int targetPlayer)
-        {
-            if (_isAITurnInProgress) return;
-            StartCoroutine(ExecuteAITurnCoroutine(playerIndex, action, tile, targetPlayer));
-        }
-
-        /// <summary>
-        /// Coroutine that executes an AI turn with delays for visual readability.
-        /// </summary>
-        private IEnumerator ExecuteAITurnCoroutine(int playerIndex, PlayerAction action,
-            HexCoordinates tile, int targetPlayer)
-        {
-            _isAITurnInProgress = true;
-            float delay = _aiPlayer?.ActionDelay ?? 0.6f;
-
-            // Hide action panel during AI turns
-            // (the UI reacts to phase changes, but we disable buttons proactively)
-
-            // Wait before choosing action
-            yield return new WaitForSeconds(delay);
-
-            if (_turnManager == null || _turnManager.CurrentPlayerIndex != playerIndex)
-            {
-                _isAITurnInProgress = false;
-                yield break;
-            }
-
-            // Step 1: Choose action
-            _turnManager.ChooseAction(action);
-
-            // Wait before selecting tile
-            yield return new WaitForSeconds(delay);
-
-            if (_turnManager == null)
-            {
-                _isAITurnInProgress = false;
-                yield break;
-            }
-
-            // Step 2: Submit tile action
-            if (action == PlayerAction.Question)
-            {
-                _turnManager.SubmitQuestion(tile, targetPlayer);
-            }
-            else
-            {
-                _turnManager.SubmitSearch(tile);
-
-                // If search failed, penalty placement is handled by
-                // HandleSearchPerformed → ExecuteAIPenaltyCoroutine.
-                // Wait for penalty phase to complete before releasing AI lock.
-                if (_turnManager != null &&
-                    _turnManager.CurrentPhase == TurnPhase.PenaltyPlacement)
-                {
-                    // Keep AI lock until penalty coroutine finishes
-                    while (_turnManager != null &&
-                           _turnManager.CurrentPhase == TurnPhase.PenaltyPlacement)
-                    {
-                        yield return null;
-                    }
-                }
-            }
-
-            _isAITurnInProgress = false;
         }
 
         // ---------------------------------------------------------
@@ -478,9 +346,8 @@ namespace Cryptid.Core
                 return;
             }
 
-            // Turn controls (only during Playing phase, human player only)
+            // Turn controls (only during Playing phase)
             if (_fsm.CurrentPhase != GamePhase.Playing || _turnManager == null) return;
-            if (_isAITurnInProgress || _turnManager.CurrentPlayerIndex != 0) return;
 
             // Q → Choose Question
             if (kb.qKey.wasPressedThisFrame &&
