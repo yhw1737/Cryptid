@@ -231,8 +231,19 @@ namespace Cryptid.Systems.Turn
 
             OnResponseGiven?.Invoke(_questionTargetPlayer, _questionTile, result);
 
-            // End turn
-            EndTurn();
+            if (result)
+            {
+                // YES → no penalty, end turn
+                EndTurn();
+            }
+            else
+            {
+                // NO → asker must also place a penalty cube
+                // on a tile where their OWN clue does NOT match.
+                Debug.Log($"[TurnManager] Response was NO — Player {_currentPlayerIndex + 1} " +
+                         $"must place a penalty cube on a non-matching tile.");
+                SetPhase(TurnPhase.PenaltyPlacement);
+            }
         }
 
         /// <summary>

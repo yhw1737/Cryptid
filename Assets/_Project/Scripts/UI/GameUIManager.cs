@@ -269,6 +269,13 @@ namespace Cryptid.UI
             string token = result ? "disc" : "cube";
             _gameLogPanel.AddEntry(responding,
                 $"P{responding + 1} responds: {(result ? "YES" : "NO")} ({token})");
+
+            if (!result && _turnManager != null)
+            {
+                int asker = _turnManager.CurrentPlayerIndex;
+                _gameLogPanel.AddEntry(asker,
+                    $"  → P{asker + 1} must place a cube on a non-matching tile");
+            }
         }
 
         private void HandleSearchPerformed(int player, HexCoordinates tile, bool correct)
