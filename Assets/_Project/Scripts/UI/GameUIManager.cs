@@ -1,6 +1,7 @@
 using System;
 using Cryptid.Core;
 using Cryptid.Data;
+using Cryptid.Systems.Map;
 using Cryptid.Systems.Turn;
 using UnityEngine;
 
@@ -46,6 +47,7 @@ namespace Cryptid.UI
         private CluePanel _cluePanel;
         private GameOverPanel _gameOverPanel;
         private GameLogPanel _gameLogPanel;
+        private TileInfoPanel _tileInfoPanel;
 
         // ---------------------------------------------------------
         // Bound game state (set via Bind methods)
@@ -75,6 +77,9 @@ namespace Cryptid.UI
 
         /// <summary>The game log panel, used by external systems to add entries.</summary>
         public GameLogPanel LogPanel => _gameLogPanel;
+
+        /// <summary>The tile info panel, for external access.</summary>
+        public TileInfoPanel TileInfo => _tileInfoPanel;
 
         /// <summary>
         /// Called by GameBootstrapper after FSM is created.
@@ -107,6 +112,13 @@ namespace Cryptid.UI
             _turnManager.OnSearchDiscPlaced += HandleSearchDiscPlaced;
             _turnManager.OnSearchVerification += HandleSearchVerification;
             _turnManager.OnGameWon          += HandleGameWon;
+
+            // Bind tile hover to info panel
+            var tileInteraction = GameService.Get<TileInteractionSystem>();
+            if (tileInteraction != null)
+            {
+                tileInteraction.OnTileHovered += HandleTileHovered;
+            }
         }
 
         // ---------------------------------------------------------
@@ -170,6 +182,12 @@ namespace Cryptid.UI
             _gameLogPanel = logRoot.gameObject.AddComponent<GameLogPanel>();
             _gameLogPanel.Build(logRoot);
 
+            // Tile Info Panel (bottom-left: shows tile details on hover)
+            var tileInfoRoot = UIFactory.CreatePanel(_canvas.transform,
+                "TileInfoPanel", UIFactory.PanelBg);
+            _tileInfoPanel = tileInfoRoot.gameObject.AddComponent<TileInfoPanel>();
+            _tileInfoPanel.Build(tileInfoRoot);
+
             // Initially hide all gameplay panels
             ShowLobbyState();
         }
@@ -187,6 +205,7 @@ namespace Cryptid.UI
             _cluePanel.gameObject.SetActive(false);
             _gameOverPanel.Hide();
             _gameLogPanel.gameObject.SetActive(false);
+            _tileInfoPanel.gameObject.SetActive(false);
         }
 
         private void HandleStateChanged(GamePhase oldPhase, GamePhase newPhase)
@@ -205,6 +224,7 @@ namespace Cryptid.UI
                     _turnIndicator.gameObject.SetActive(true);
                     _cluePanel.gameObject.SetActive(true);
                     _gameLogPanel.gameObject.SetActive(true);
+                    _tileInfoPanel.gameObject.SetActive(true);
                     _gameOverPanel.Hide();
                     _gameLogPanel.AddSystemMessage("=== Game Started ===");
                     break;
@@ -318,6 +338,18 @@ namespace Cryptid.UI
         }
 
         // ---------------------------------------------------------
+        // Tile Info Handlers
+        // ---------------------------------------------------------
+
+        private void HandleTileHovered(HexTile tile)
+        {
+            if (_tileInfoPanel != null)
+            {
+                _tileInfoPanel.ShowTileInfo(tile);
+            }
+        }
+
+        // ---------------------------------------------------------
         // UI Button Handlers
         // ---------------------------------------------------------
 
@@ -355,6 +387,11 @@ namespace Cryptid.UI
                 _fsm.OnStateChanged -= HandleStateChanged;
 
             UnsubscribeTurnEvents();
+
+            // Unsubscribe tile hover
+            var tileInteraction = GameService.Get<TileInteractionSystem>();
+            if (tileInteraction != null)
+                tileInteraction.OnTileHovered -= HandleTileHovered;
 
             if (_actionPanel != null)
                 _actionPanel.OnActionClicked -= HandleActionButtonClicked;

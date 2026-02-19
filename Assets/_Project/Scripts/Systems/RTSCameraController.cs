@@ -190,7 +190,40 @@ namespace Cryptid.Systems
         public void FocusOn(Vector3 worldPosition)
         {
             _targetPosition = new Vector3(worldPosition.x, _targetZoom, worldPosition.z);
+            transform.position = new Vector3(worldPosition.x, _targetZoom, worldPosition.z);
+        }
+
+        /// <summary>
+        /// Centers the camera on the map by computing the bounding center
+        /// of all tile positions and adjusting zoom to fit.
+        /// </summary>
+        public void CenterOnMap(System.Collections.Generic.Dictionary<Core.HexCoordinates, Data.WorldTile> worldMap)
+        {
+            if (worldMap == null || worldMap.Count == 0) return;
+
+            Vector3 min = new Vector3(float.MaxValue, 0f, float.MaxValue);
+            Vector3 max = new Vector3(float.MinValue, 0f, float.MinValue);
+
+            foreach (var kvp in worldMap)
+            {
+                Vector3 pos = Core.HexMetrics.HexToWorldPosition(kvp.Key);
+                if (pos.x < min.x) min.x = pos.x;
+                if (pos.z < min.z) min.z = pos.z;
+                if (pos.x > max.x) max.x = pos.x;
+                if (pos.z > max.z) max.z = pos.z;
+            }
+
+            Vector3 center = (min + max) * 0.5f;
+            float mapWidth = max.x - min.x;
+            float mapHeight = max.z - min.z;
+            float extent = Mathf.Max(mapWidth, mapHeight);
+
+            // Set zoom to fit the map with some margin
+            _targetZoom = Mathf.Clamp(extent * 0.7f, _zoomMin, _zoomMax);
+            _targetPosition = new Vector3(center.x, _targetZoom, center.z);
             transform.position = _targetPosition;
+
+            Debug.Log($"[RTSCamera] Centered on map. Center: {center}, Zoom: {_targetZoom:F1}");
         }
 
         /// <summary>

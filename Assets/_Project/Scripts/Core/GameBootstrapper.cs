@@ -163,12 +163,18 @@ namespace Cryptid.Core
         /// </summary>
         private void PerformSetup()
         {
+            // Step 0: Disable legacy debug components that conflict with procedural map
+            DisableLegacyDebuggers();
+
             // Step 1: Generate map (if not already done by MapGenerator.Start)
             if (_mapGenerator.WorldMap == null || _mapGenerator.WorldMap.Count == 0)
             {
                 _mapGenerator.GenerateMap();
                 _mapGenerator.SpawnVisuals();
             }
+
+            // Step 1.5: Center camera on the generated map
+            CenterCameraOnMap();
 
             // Step 2: Generate puzzle
             _currentPuzzle = _puzzleGenerator.Generate(
@@ -200,6 +206,46 @@ namespace Cryptid.Core
             _turnManager.OnGameWon += HandleGameWon;
 
             Debug.Log("[GameBootstrapper] Setup complete. Puzzle ready.");
+        }
+
+        /// <summary>
+        /// Disables legacy debug components (MapPieceDebugger, MapDebugOverlay,
+        /// PuzzleDebugVisualizer) to prevent visual conflicts with the procedural map.
+        /// </summary>
+        private void DisableLegacyDebuggers()
+        {
+            foreach (var debugger in FindObjectsByType<MapPieceDebugger>(
+                FindObjectsSortMode.None))
+            {
+                debugger.gameObject.SetActive(false);
+                Debug.Log($"[GameBootstrapper] Disabled legacy debugger: {debugger.name}");
+            }
+
+            foreach (var overlay in FindObjectsByType<MapDebugOverlay>(
+                FindObjectsSortMode.None))
+            {
+                overlay.enabled = false;
+                Debug.Log($"[GameBootstrapper] Disabled MapDebugOverlay on: {overlay.name}");
+            }
+
+            foreach (var viz in FindObjectsByType<Cryptid.Systems.Clue.PuzzleDebugVisualizer>(
+                FindObjectsSortMode.None))
+            {
+                viz.gameObject.SetActive(false);
+                Debug.Log($"[GameBootstrapper] Disabled PuzzleDebugVisualizer: {viz.name}");
+            }
+        }
+
+        /// <summary>
+        /// Centers the RTS camera on the generated map.
+        /// </summary>
+        private void CenterCameraOnMap()
+        {
+            var cam = FindFirstObjectByType<Cryptid.Systems.RTSCameraController>();
+            if (cam != null && _mapGenerator.WorldMap != null)
+            {
+                cam.CenterOnMap(_mapGenerator.WorldMap);
+            }
         }
 
         // ---------------------------------------------------------
