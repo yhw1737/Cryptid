@@ -1,6 +1,7 @@
 using System;
 using Cryptid.Core;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 using TMPro;
 
@@ -65,6 +66,19 @@ namespace Cryptid.Systems.Map
             {
                 _mouse = Mouse.current;
                 if (_mouse == null) return;
+            }
+
+            // Skip tile interaction when pointer is over UI
+            if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject())
+            {
+                // Clear hover state so highlight doesn't stick
+                if (_currentHovered != null)
+                {
+                    _currentHovered.SetHighlight(false);
+                    _currentHovered = null;
+                    OnTileHovered?.Invoke(null);
+                }
+                return;
             }
 
             HandleHover();
