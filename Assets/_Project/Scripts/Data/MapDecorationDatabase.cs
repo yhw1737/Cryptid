@@ -13,7 +13,7 @@ namespace Cryptid.Data
     ///   MapDecorations/Swamp/    → mushroom/stump/branch prefabs
     ///   MapDecorations/Mountain/ → large rock prefabs
     ///   MapDecorations/Structure/StandingStone  → standing stone model
-    ///   (AbandonedShack, Bear, Cougar → procedural placeholders)
+    ///   (AbandonedShack, Tiger, Wolf → procedural placeholders)
     /// </summary>
     public static class MapDecorationDatabase
     {

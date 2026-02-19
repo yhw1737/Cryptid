@@ -151,6 +151,7 @@ MonoBehaviour:
   _mapGenerator: {fileID: 148594030}
   _tokenPlacer: {fileID: 1284919991}
   _tileInteraction: {fileID: 209761992}
+  _uiManager: {fileID: 0}
   _playerCount: 3
   _puzzleSeed: -1
   _autoStart: 1
@@ -217,6 +218,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 18fa244e22c43e64a86b9e331e802f5a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Cryptid.Systems.Map.MapGenerator
+  _useProcedural: 1
+  _proceduralConfig: {fileID: 11400000, guid: 4ae892e857da33142b67702f75811091, type: 2}
+  _mapSeed: -1
   _assemblyConfig: {fileID: 11400000, guid: 0f93456ac7da7bd428f33dc2317c6f55, type: 2}
   _visualConfig: {fileID: 0}
   _tileContainer: {fileID: 0}
@@ -373,13 +377,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 330585543}
   serializedVersion: 2
-  m_LocalRotation: {x: 0.7071068, y: 0, z: 0, w: 0.7071068}
+  m_LocalRotation: {x: 0.60876137, y: 0, z: 0, w: 0.7933534}
   m_LocalPosition: {x: 0, y: 15, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 90, y: 0, z: 0}
+  m_LocalEulerAnglesHint: {x: 75, y: 0, z: 0}
 --- !u!114 &330585547
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -436,7 +440,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0c3d1fa4ff4031c4cbf3c2f4d4e2a8fd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Cryptid.Systems.RTSCameraController
-  _panSpeed: 0.5
   _panSmoothing: 0.15
   _zoomSpeed: 1
   _zoomMin: 3
@@ -664,9 +667,6 @@ MonoBehaviour:
   - {r: 0.4, g: 0.9, b: 0.4, a: 1}
   - {r: 1, g: 0.8, b: 0.2, a: 1}
   - {r: 0.8, g: 0.4, b: 0.9, a: 1}
-  _generateKey: 103
-  _clearKey: 99
-  _cycleViewKey: 118
 --- !u!4 &591674359
 Transform:
   m_ObjectHideFlags: 0

@@ -277,19 +277,19 @@ namespace Cryptid.Systems.Map
 
             var centers = new List<HexCoordinates>();
 
-            // Place Bear territories
-            for (int i = 0; i < config.BearTerritoryCount; i++)
+            // Place Tiger territories
+            for (int i = 0; i < config.TigerTerritoryCount; i++)
             {
-                if (!PlaceTerritory(map, eligible, centers, AnimalType.Bear,
+                if (!PlaceTerritory(map, eligible, centers, AnimalType.Tiger,
                     config.AnimalTerritoryRadius, config.MinTerritoryDistance,
                     blocked, rng))
                     return false;
             }
 
-            // Place Cougar territories
-            for (int i = 0; i < config.CougarTerritoryCount; i++)
+            // Place Wolf territories
+            for (int i = 0; i < config.WolfTerritoryCount; i++)
             {
-                if (!PlaceTerritory(map, eligible, centers, AnimalType.Cougar,
+                if (!PlaceTerritory(map, eligible, centers, AnimalType.Wolf,
                     config.AnimalTerritoryRadius, config.MinTerritoryDistance,
                     blocked, rng))
                     return false;

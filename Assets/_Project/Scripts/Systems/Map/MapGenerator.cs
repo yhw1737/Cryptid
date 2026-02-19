@@ -485,7 +485,7 @@ namespace Cryptid.Systems.Map
 
         /// <summary>
         /// Spawns a colored capsule as an animal territory marker.
-        /// Bear = brown, Cougar = tan/sandy.
+        /// Tiger = orange-striped, Wolf = dark gray.
         /// </summary>
         private void SpawnAnimalMarker(AnimalType animal, Vector3 worldPos,
                                        Transform parent, Shader urpLit)
@@ -504,9 +504,9 @@ namespace Cryptid.Systems.Map
 
             Color animalColor = animal switch
             {
-                AnimalType.Bear   => new Color(0.55f, 0.33f, 0.14f), // Brown
-                AnimalType.Cougar => new Color(0.82f, 0.71f, 0.45f), // Sandy tan
-                _                 => Color.magenta
+                AnimalType.Tiger => new Color(0.95f, 0.55f, 0.10f), // Orange
+                AnimalType.Wolf  => new Color(0.45f, 0.45f, 0.50f), // Dark gray
+                _                => Color.magenta
             };
 
             var r = marker.GetComponent<Renderer>();

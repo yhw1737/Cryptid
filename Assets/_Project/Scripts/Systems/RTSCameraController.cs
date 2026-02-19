@@ -66,6 +66,10 @@ namespace Cryptid.Systems
             if (_cam == null)
                 _cam = Camera.main;
 
+            // Use orthographic projection for clean top-down hex view
+            if (_cam != null)
+                _cam.orthographic = true;
+
             _mouse = Mouse.current;
         }
 
@@ -149,13 +153,17 @@ namespace Cryptid.Systems
             // Smoothly interpolate position (XZ pan)
             Vector3 smoothedPos = Vector3.Lerp(
                 transform.position,
-                new Vector3(_targetPosition.x, _targetZoom, _targetPosition.z),
+                new Vector3(_targetPosition.x, transform.position.y, _targetPosition.z),
                 _panSmoothing);
 
-            // Smoothly interpolate zoom (Y height)
-            float smoothedY = Mathf.Lerp(transform.position.y, _targetZoom, _zoomSmoothing);
+            transform.position = smoothedPos;
 
-            transform.position = new Vector3(smoothedPos.x, smoothedY, smoothedPos.z);
+            // Smoothly interpolate orthographic size (zoom)
+            if (_cam != null && _cam.orthographic)
+            {
+                _cam.orthographicSize = Mathf.Lerp(
+                    _cam.orthographicSize, _targetZoom, _zoomSmoothing);
+            }
         }
 
         // ---------------------------------------------------------
@@ -189,8 +197,8 @@ namespace Cryptid.Systems
         /// </summary>
         public void FocusOn(Vector3 worldPosition)
         {
-            _targetPosition = new Vector3(worldPosition.x, _targetZoom, worldPosition.z);
-            transform.position = new Vector3(worldPosition.x, _targetZoom, worldPosition.z);
+            _targetPosition = new Vector3(worldPosition.x, transform.position.y, worldPosition.z);
+            transform.position = _targetPosition;
         }
 
         /// <summary>
@@ -220,8 +228,11 @@ namespace Cryptid.Systems
 
             // Set zoom to fit the map with some margin
             _targetZoom = Mathf.Clamp(extent * 0.7f, _zoomMin, _zoomMax);
-            _targetPosition = new Vector3(center.x, _targetZoom, center.z);
+            _targetPosition = new Vector3(center.x, transform.position.y, center.z);
             transform.position = _targetPosition;
+
+            if (_cam != null && _cam.orthographic)
+                _cam.orthographicSize = _targetZoom;
 
             Debug.Log($"[RTSCamera] Centered on map. Center: {center}, Zoom: {_targetZoom:F1}");
         }

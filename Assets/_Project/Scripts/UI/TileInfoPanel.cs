@@ -114,11 +114,11 @@ namespace Cryptid.UI
         {
             string hex = terrain switch
             {
-                TerrainType.Desert   => "#EDCA76",
-                TerrainType.Forest   => "#2E8C33",
-                TerrainType.Water    => "#4085D9",
-                TerrainType.Swamp    => "#6B804D",
-                TerrainType.Mountain => "#8C8C8C",
+                TerrainType.Desert   => "#F5D67A",
+                TerrainType.Forest   => "#22A22A",
+                TerrainType.Water    => "#3370E6",
+                TerrainType.Swamp    => "#5A6B38",
+                TerrainType.Mountain => "#9E9A96",
                 _                    => "#FFFFFF"
             };
             return $"<color={hex}>{terrain}</color>";

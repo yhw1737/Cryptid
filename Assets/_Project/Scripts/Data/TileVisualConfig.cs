@@ -81,11 +81,11 @@ namespace Cryptid.Data
         {
             return terrain switch
             {
-                TerrainType.Desert   => new Color(0.93f, 0.79f, 0.46f), // Sandy yellow
-                TerrainType.Forest   => new Color(0.18f, 0.55f, 0.20f), // Dark green
-                TerrainType.Water    => new Color(0.25f, 0.52f, 0.85f), // Blue
-                TerrainType.Swamp    => new Color(0.42f, 0.50f, 0.30f), // Murky green
-                TerrainType.Mountain => new Color(0.55f, 0.55f, 0.55f), // Gray
+                TerrainType.Desert   => new Color(0.96f, 0.84f, 0.50f), // Warm sand
+                TerrainType.Forest   => new Color(0.13f, 0.55f, 0.13f), // Rich green
+                TerrainType.Water    => new Color(0.20f, 0.45f, 0.90f), // Deep blue
+                TerrainType.Swamp    => new Color(0.35f, 0.42f, 0.22f), // Dark olive
+                TerrainType.Mountain => new Color(0.62f, 0.60f, 0.58f), // Warm gray
                 _                    => Color.magenta                    // Error
             };
         }

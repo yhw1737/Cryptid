@@ -140,7 +140,7 @@ namespace Cryptid.Systems.Map
                 // Draw animal territory marker
                 if (tile.Animal != AnimalType.None)
                 {
-                    Gizmos.color = tile.Animal == AnimalType.Bear
+                    Gizmos.color = tile.Animal == AnimalType.Tiger
                         ? new Color(0.6f, 0.3f, 0.1f) // Brown
                         : new Color(0.8f, 0.6f, 0.2f); // Tawny
                     Gizmos.DrawWireSphere(worldPos + Vector3.up * 0.1f, 0.15f);

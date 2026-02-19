@@ -29,12 +29,12 @@ namespace Cryptid.Data
     /// <summary>
     /// Animal territory types that overlay the map.
     /// Each territory covers a contiguous region of hexes.
-    /// Mapped from art assets: Bear = Type A, Cougar = Type B.
+    /// Tiger = striped predator, Wolf = pack predator.
     /// </summary>
     public enum AnimalType
     {
-        None   = 0,
-        Bear   = 1,  // Animals FREE - Bear model
-        Cougar = 2   // Animals FREE - Wolf/Cougar model
+        None  = 0,
+        Tiger = 1,
+        Wolf  = 2
     }
 }

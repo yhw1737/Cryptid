@@ -234,6 +234,13 @@ namespace Cryptid.Core
                 viz.gameObject.SetActive(false);
                 Debug.Log($"[GameBootstrapper] Disabled PuzzleDebugVisualizer: {viz.name}");
             }
+
+            foreach (var hexDbg in FindObjectsByType<HexGridDebugger>(
+                FindObjectsSortMode.None))
+            {
+                hexDbg.gameObject.SetActive(false);
+                Debug.Log($"[GameBootstrapper] Disabled HexGridDebugger: {hexDbg.name}");
+            }
         }
 
         /// <summary>
