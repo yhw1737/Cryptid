@@ -273,13 +273,14 @@ namespace Cryptid.Systems.Turn
         /// </summary>
         /// <param name="tileCoords">The tile to place the penalty cube on.</param>
         /// <param name="worldMap">The world map for clue evaluation.</param>
-        public void SubmitPenaltyCube(HexCoordinates tileCoords,
+        /// <returns>True if accepted, false if the tile matches the searcher's clue (invalid).</returns>
+        public bool SubmitPenaltyCube(HexCoordinates tileCoords,
             IReadOnlyDictionary<HexCoordinates, WorldTile> worldMap)
         {
             if (_currentPhase != TurnPhase.PenaltyPlacement)
             {
                 Debug.LogWarning($"[TurnManager] Cannot submit penalty cube in phase {_currentPhase}.");
-                return;
+                return false;
             }
 
             // Validate: tile must NOT match the searcher's own clue
@@ -288,14 +289,14 @@ namespace Cryptid.Systems.Turn
             if (!worldMap.TryGetValue(tileCoords, out WorldTile tile))
             {
                 Debug.LogError($"[TurnManager] Penalty: Tile {tileCoords} not found in world map!");
-                return;
+                return false;
             }
 
             if (clue.Check(tile, worldMap))
             {
                 Debug.LogWarning($"[TurnManager] Cannot place penalty cube on a tile that " +
                                  $"matches your clue! Choose a tile where your clue does NOT match.");
-                return;
+                return false;
             }
 
             Debug.Log($"[TurnManager] Player {_currentPlayerIndex + 1} places penalty cube at {tileCoords}.");
@@ -303,6 +304,7 @@ namespace Cryptid.Systems.Turn
             OnPenaltyCubePlaced?.Invoke(_currentPlayerIndex, tileCoords);
 
             EndTurn();
+            return true;
         }
 
         // ---------------------------------------------------------

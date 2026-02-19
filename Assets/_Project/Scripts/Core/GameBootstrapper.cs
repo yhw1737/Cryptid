@@ -184,16 +184,18 @@ namespace Cryptid.Core
             _turnManager = new TurnManager(_playerCount, _currentPuzzle);
             GameService.Register(_turnManager);
 
-            // Subscribe to turn events
+            // Bind UI FIRST so log entries appear before action handlers
+            // (GameBootstrapper's HandleQuestionAsked calls AutoRespond synchronously,
+            //  which chains into EndTurn → next turn. UI must log before that.)
+            _uiManager.BindGameplay(_turnManager, _currentPuzzle, _playerCount);
+
+            // Subscribe to turn events (after UI, so UI logs come first)
             _turnManager.OnTurnStarted += HandleTurnStarted;
             _turnManager.OnQuestionAsked += HandleQuestionAsked;
             _turnManager.OnResponseGiven += HandleResponseGiven;
             _turnManager.OnSearchPerformed += HandleSearchPerformed;
             _turnManager.OnPenaltyCubePlaced += HandlePenaltyCubePlaced;
             _turnManager.OnGameWon += HandleGameWon;
-
-            // Bind UI to gameplay systems
-            _uiManager.BindGameplay(_turnManager, _currentPuzzle, _playerCount);
 
             Debug.Log("[GameBootstrapper] Setup complete. Puzzle ready.");
         }
@@ -245,7 +247,13 @@ namespace Cryptid.Core
                     break;
 
                 case TurnPhase.PenaltyPlacement:
-                    _turnManager.SubmitPenaltyCube(tile.Coordinates, _mapGenerator.WorldMap);
+                    bool accepted = _turnManager.SubmitPenaltyCube(
+                        tile.Coordinates, _mapGenerator.WorldMap);
+                    if (!accepted && _uiManager?.LogPanel != null)
+                    {
+                        _uiManager.LogPanel.AddEntry(_turnManager.CurrentPlayerIndex,
+                            "  ⚠ That tile matches your clue! Choose a different tile.");
+                    }
                     break;
 
                 default:
