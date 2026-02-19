@@ -35,7 +35,7 @@ namespace Cryptid.Data
         [Header("Terrain Noise")]
         [Tooltip("Scale of the primary Perlin noise layer (lower = larger biomes)")]
         [Range(0.05f, 0.5f)]
-        [SerializeField] private float _noiseScale = 0.15f;
+        [SerializeField] private float _noiseScale = 0.12f;
 
         [Tooltip("Second octave scale for detail variation")]
         [Range(0.1f, 1f)]
@@ -107,7 +107,7 @@ namespace Cryptid.Data
         [Header("Map Validation")]
         [Tooltip("Maximum fraction of one terrain type (prevent 90% water etc.)")]
         [Range(0.2f, 0.6f)]
-        [SerializeField] private float _maxTerrainFraction = 0.40f;
+        [SerializeField] private float _maxTerrainFraction = 0.50f;
 
         [Tooltip("Maximum number of generation retries before giving up")]
         [Range(5, 100)]

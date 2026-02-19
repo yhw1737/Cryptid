@@ -183,8 +183,9 @@ namespace Cryptid.Systems.Map
                 }
             }
 
-            // Also verify all 5 terrain types are present
-            if (counts.Count < 5)
+            // Verify at least 3 terrain types are present
+            // (all 5 is ideal but depends on noise seed)
+            if (counts.Count < 3)
             {
                 Debug.Log($"[ProceduralMapBuilder] Only {counts.Count}/5 terrain types present. " +
                          "Distribution invalid.");
@@ -332,19 +333,25 @@ namespace Cryptid.Systems.Map
             int radius,
             HashSet<TerrainType> blockedTerrains)
         {
+            // Collect keys first to avoid modifying dictionary during iteration
+            var toUpdate = new List<HexCoordinates>();
             foreach (var kvp in map)
             {
                 int dist = center.DistanceTo(kvp.Key);
                 if (dist > radius) continue;
 
                 var tile = kvp.Value;
-
-                // Don't overwrite existing animal or paint on blocked terrain
                 if (tile.Animal != AnimalType.None) continue;
                 if (blockedTerrains.Contains(tile.Terrain)) continue;
 
+                toUpdate.Add(kvp.Key);
+            }
+
+            foreach (var coords in toUpdate)
+            {
+                var tile = map[coords];
                 tile.Animal = animal;
-                map[kvp.Key] = tile;
+                map[coords] = tile;
             }
         }
 
