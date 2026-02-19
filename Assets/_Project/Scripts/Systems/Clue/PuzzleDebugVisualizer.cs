@@ -50,11 +50,6 @@ namespace Cryptid.Systems.Clue
             new Color(0.8f, 0.4f, 0.9f),  // Purple
         };
 
-        [Header("Controls")]
-        [SerializeField] private KeyCode _generateKey = KeyCode.G;
-        [SerializeField] private KeyCode _clearKey = KeyCode.C;
-        [SerializeField] private KeyCode _cycleViewKey = KeyCode.V;
-
         // ---------------------------------------------------------
         // Runtime State
         // ---------------------------------------------------------

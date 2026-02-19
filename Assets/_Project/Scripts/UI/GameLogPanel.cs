@@ -42,7 +42,7 @@ namespace Cryptid.UI
             headerRt.pivot = new Vector2(0.5f, 1f);
             headerRt.sizeDelta = new Vector2(0f, 30f);
             var headerTmp = UIFactory.CreateTMP(headerRt, "HeaderText",
-                "GAME LOG", 14, TextAlignmentOptions.MidlineCenter,
+                "GAME LOG", 14, TextAlignmentOptions.Center,
                 new Color(0.5f, 0.5f, 0.5f));
 
             // ScrollRect viewport
@@ -107,7 +107,7 @@ namespace Cryptid.UI
 
             var tmp = UIFactory.CreateTMP(entryContainer, "Text",
                 message, 13, TextAlignmentOptions.MidlineLeft, textColor);
-            tmp.enableWordWrapping = true;
+            tmp.textWrappingMode = TextWrappingModes.Normal;
             tmp.overflowMode = TextOverflowModes.Truncate;
 
             _entries.Add(entryContainer.gameObject);

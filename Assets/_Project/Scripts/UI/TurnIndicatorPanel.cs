@@ -85,6 +85,7 @@ namespace Cryptid.UI
             TurnPhase.SelectTile      => "Select a Tile",
             TurnPhase.WaitForResponse => "Waiting for Response...",
             TurnPhase.Search          => "Search a Tile",
+            TurnPhase.PenaltyPlacement => "Place Penalty Cube",
             TurnPhase.TurnEnd         => "Turn Ending...",
             _ => phase.ToString()
         };

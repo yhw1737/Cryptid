@@ -21,9 +21,6 @@ namespace Cryptid.Systems
         // ---------------------------------------------------------
 
         [Header("Pan Settings")]
-        [Tooltip("How fast the camera pans relative to mouse movement")]
-        [SerializeField] private float _panSpeed = 0.5f;
-
         [Tooltip("Smoothing factor for pan movement (lower = smoother)")]
         [Range(0.01f, 1f)]
         [SerializeField] private float _panSmoothing = 0.15f;

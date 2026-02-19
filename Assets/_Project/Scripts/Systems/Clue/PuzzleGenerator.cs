@@ -205,8 +205,8 @@ namespace Cryptid.Systems.Clue
         /// Searches for a combination of N clues (from candidates) that
         /// together yield exactly 1 valid tile when AND-ed.
         /// 
-        /// Uses randomized search rather than exhaustive enumeration
-        /// for efficiency on larger candidate pools.
+        /// Uses ClueBalancer to prefer same-tier combinations for fairness.
+        /// Falls back to unrestricted random search if no balanced combo is found.
         /// </summary>
         private List<IClue> FindValidCombination(
             List<IClue> candidates,
@@ -230,20 +230,72 @@ namespace Cryptid.Systems.Clue
 
             int totalTiles = worldMap.Count;
 
-            // Randomized combination search
-            int[] indices = new int[playerCount];
+            // --- Balanced search: try same-tier combinations first ---
+
+            var tiers = ClueBalancer.GroupByTier(passSets, totalTiles);
+            ClueBalancer.LogTierDistribution(tiers, passSets, totalTiles);
+
+            var bestTier = ClueBalancer.SelectBestTier(tiers, playerCount);
+
+            if (bestTier.HasValue)
+            {
+                var tierIndices = tiers[bestTier.Value];
+                Debug.Log($"[PuzzleGenerator] Trying balanced search in tier {bestTier.Value} " +
+                          $"({tierIndices.Count} candidates)");
+
+                // Allocate budget: most attempts go to balanced search
+                int balancedBudget = (int)(MaxCombinationAttempts * 0.7f);
+                var result = SearchCombination(
+                    candidates, passSets, tierIndices, playerCount, totalTiles,
+                    balancedBudget, rng);
+
+                if (result != null) return result;
+
+                Debug.Log($"[PuzzleGenerator] Balanced search exhausted. Falling back to unrestricted.");
+            }
+
+            // --- Fallback: unrestricted random search ---
+
+            var allIndices = new List<int>();
+            for (int i = 0; i < candidates.Count; i++)
+                allIndices.Add(i);
+
+            int fallbackBudget = bestTier.HasValue
+                ? MaxCombinationAttempts - (int)(MaxCombinationAttempts * 0.7f)
+                : MaxCombinationAttempts;
+
+            return SearchCombination(
+                candidates, passSets, allIndices, playerCount, totalTiles,
+                fallbackBudget, rng);
+        }
+
+        /// <summary>
+        /// Searches for a valid N-clue combination within a restricted index pool.
+        /// </summary>
+        private List<IClue> SearchCombination(
+            List<IClue> candidates,
+            List<HashSet<HexCoordinates>> passSets,
+            List<int> pool,
+            int playerCount,
+            int totalTiles,
+            int maxAttempts,
+            System.Random rng)
+        {
+            if (pool.Count < playerCount) return null;
+
+            int[] picked = new int[playerCount];
             int attempts = 0;
 
-            while (attempts < MaxCombinationAttempts)
+            while (attempts < maxAttempts)
             {
                 attempts++;
 
-                // Pick random distinct indices
-                if (!PickRandomDistinctIndices(indices, candidates.Count, rng))
+                // Pick random distinct indices from the pool
+                if (!PickRandomDistinctFromPool(picked, pool, rng))
                     continue;
 
                 // Compute intersection size efficiently
-                int intersectionCount = CountIntersection(passSets, indices, totalTiles);
+                int intersectionCount = CountIntersection(passSets, picked, totalTiles);
 
                 if (intersectionCount == 1)
                 {
@@ -251,16 +303,17 @@ namespace Cryptid.Systems.Clue
                     var result = new List<IClue>();
                     for (int i = 0; i < playerCount; i++)
                     {
-                        result.Add(candidates[indices[i]]);
+                        result.Add(candidates[picked[i]]);
                     }
 
                     Debug.Log($"[PuzzleGenerator] Valid combination found after {attempts} attempts:");
                     for (int i = 0; i < result.Count; i++)
                     {
-                        int passCount = passSets[indices[i]].Count;
+                        int passCount = passSets[picked[i]].Count;
                         float passRate = (float)passCount / totalTiles * 100f;
+                        var tier = ClueBalancer.Classify(passCount, totalTiles);
                         Debug.Log($"  Player {i + 1}: {result[i].Description} " +
-                                 $"({passCount}/{totalTiles} tiles, {passRate:F0}%)");
+                                 $"({passCount}/{totalTiles} tiles, {passRate:F0}%, {tier})");
                     }
 
                     return result;
@@ -317,6 +370,32 @@ namespace Cryptid.Systems.Clue
             }
 
             return count;
+        }
+
+        /// <summary>
+        /// Picks N random distinct values from a restricted pool of indices.
+        /// Returns false if the pool is too small.
+        /// </summary>
+        private bool PickRandomDistinctFromPool(int[] picked, List<int> pool, System.Random rng)
+        {
+            if (pool.Count < picked.Length) return false;
+
+            var used = new HashSet<int>();
+            for (int i = 0; i < picked.Length; i++)
+            {
+                int attempts = 0;
+                int poolIdx;
+                do
+                {
+                    poolIdx = rng.Next(pool.Count);
+                    if (++attempts > 100) return false;
+                } while (used.Contains(poolIdx));
+
+                picked[i] = pool[poolIdx];
+                used.Add(poolIdx);
+            }
+
+            return true;
         }
 
         /// <summary>

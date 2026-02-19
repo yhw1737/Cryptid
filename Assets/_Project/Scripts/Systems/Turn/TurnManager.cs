@@ -25,6 +25,12 @@ namespace Cryptid.Systems.Turn
 
         /// <summary> Turn is complete. Advance to next player. </summary>
         TurnEnd = 4,
+
+        /// <summary>
+        /// Penalty after a failed search.
+        /// The searcher must place a cube on a tile where their own clue does NOT match.
+        /// </summary>
+        PenaltyPlacement = 5,
     }
 
     /// <summary>
@@ -100,11 +106,12 @@ namespace Cryptid.Systems.Turn
         public event Action<int, HexCoordinates, bool> OnSearchPerformed;
 
         /// <summary>
-        /// Fired for each opponent's penalty reveal after a failed search.
-        /// Args: (respondingPlayer, tileCoords, clueMatches).
-        /// All opponents must reveal their clue result for the searched tile.
+        /// Fired when the searcher places a penalty cube after a failed search.
+        /// Args: (playerIndex, tileCoords).
+        /// Per Cryptid rules, the searcher must place a cube on a tile
+        /// where their OWN clue does NOT match.
         /// </summary>
-        public event Action<int, HexCoordinates, bool> OnSearchPenalty;
+        public event Action<int, HexCoordinates> OnPenaltyCubePlaced;
 
         /// <summary> Fired when a player wins. Arg: winnerIndex. </summary>
         public event Action<int> OnGameWon;
@@ -230,8 +237,8 @@ namespace Cryptid.Systems.Turn
 
         /// <summary>
         /// Player performs a Search: guesses the Cryptid's location.
-        /// If correct, they win. If wrong, all opponents reveal their clue
-        /// for that tile (penalty tokens placed via OnSearchPenalty).
+        /// If correct, they win. If wrong, they must place a penalty cube
+        /// on a tile where their own clue does NOT match (PenaltyPlacement phase).
         /// </summary>
         public void SubmitSearch(HexCoordinates tileCoords)
         {
@@ -253,40 +260,49 @@ namespace Cryptid.Systems.Turn
             else
             {
                 Debug.Log($"[TurnManager] Player {_currentPlayerIndex + 1} searched {tileCoords} — WRONG! " +
-                         $"(Answer was {_puzzle.AnswerTile.Coordinates})");
-                // Penalty: notify that each opponent must reveal their clue result
-                // The actual evaluation is done externally via ApplySearchPenalty()
-                EndTurn();
+                         $"(Answer was {_puzzle.AnswerTile.Coordinates}). Must place penalty cube.");
+                // Transition to PenaltyPlacement — searcher must place a cube
+                // on a tile where their own clue does NOT match.
+                SetPhase(TurnPhase.PenaltyPlacement);
             }
         }
 
         /// <summary>
-        /// Applies the search penalty: evaluates every player's clue (except the
-        /// searcher) on the given tile and fires OnSearchPenalty for each.
-        /// Should be called by the game controller after OnSearchPerformed(isCorrect=false).
+        /// Submits a penalty cube placement after a failed search.
+        /// The searcher must choose a tile where their OWN clue does NOT match.
         /// </summary>
-        public void ApplySearchPenalty(HexCoordinates tileCoords, int searcherIndex,
+        /// <param name="tileCoords">The tile to place the penalty cube on.</param>
+        /// <param name="worldMap">The world map for clue evaluation.</param>
+        public void SubmitPenaltyCube(HexCoordinates tileCoords,
             IReadOnlyDictionary<HexCoordinates, WorldTile> worldMap)
         {
-            if (!worldMap.TryGetValue(tileCoords, out WorldTile tile))
+            if (_currentPhase != TurnPhase.PenaltyPlacement)
             {
-                Debug.LogError($"[TurnManager] Penalty: Tile {tileCoords} not found!");
+                Debug.LogWarning($"[TurnManager] Cannot submit penalty cube in phase {_currentPhase}.");
                 return;
             }
 
-            for (int i = 0; i < _playerCount; i++)
+            // Validate: tile must NOT match the searcher's own clue
+            var clue = _puzzle.PlayerClues[_currentPlayerIndex];
+
+            if (!worldMap.TryGetValue(tileCoords, out WorldTile tile))
             {
-                if (i == searcherIndex) continue;
-
-                var clue = _puzzle.PlayerClues[i];
-                bool result = clue.Check(tile, worldMap);
-
-                string tokenStr = result ? "disc" : "cube";
-                Debug.Log($"[TurnManager] Penalty: Player {i + 1} reveals {tokenStr} " +
-                         $"at {tileCoords} (Clue: {clue.Description})");
-
-                OnSearchPenalty?.Invoke(i, tileCoords, result);
+                Debug.LogError($"[TurnManager] Penalty: Tile {tileCoords} not found in world map!");
+                return;
             }
+
+            if (clue.Check(tile, worldMap))
+            {
+                Debug.LogWarning($"[TurnManager] Cannot place penalty cube on a tile that " +
+                                 $"matches your clue! Choose a tile where your clue does NOT match.");
+                return;
+            }
+
+            Debug.Log($"[TurnManager] Player {_currentPlayerIndex + 1} places penalty cube at {tileCoords}.");
+
+            OnPenaltyCubePlaced?.Invoke(_currentPlayerIndex, tileCoords);
+
+            EndTurn();
         }
 
         // ---------------------------------------------------------

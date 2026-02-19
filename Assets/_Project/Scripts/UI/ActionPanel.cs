@@ -89,6 +89,12 @@ namespace Cryptid.UI
                     gameObject.SetActive(true);
                     break;
 
+                case TurnPhase.PenaltyPlacement:
+                    _buttonContainer.SetActive(false);
+                    _instructionText.text = "Wrong! Place a cube on a tile your clue does NOT match";
+                    gameObject.SetActive(true);
+                    break;
+
                 default:
                     gameObject.SetActive(false);
                     break;

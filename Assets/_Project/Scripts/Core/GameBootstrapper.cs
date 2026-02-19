@@ -193,7 +193,7 @@ namespace Cryptid.Core
             _turnManager.OnQuestionAsked += HandleQuestionAsked;
             _turnManager.OnResponseGiven += HandleResponseGiven;
             _turnManager.OnSearchPerformed += HandleSearchPerformed;
-            _turnManager.OnSearchPenalty += HandleSearchPenalty;
+            _turnManager.OnPenaltyCubePlaced += HandlePenaltyCubePlaced;
             _turnManager.OnGameWon += HandleGameWon;
 
             // Bind UI to gameplay systems
@@ -257,6 +257,10 @@ namespace Cryptid.Core
                     _turnManager.SubmitSearch(tile.Coordinates);
                     break;
 
+                case TurnPhase.PenaltyPlacement:
+                    _turnManager.SubmitPenaltyCube(tile.Coordinates, _mapGenerator.WorldMap);
+                    break;
+
                 default:
                     Debug.Log($"[GameBootstrapper] Tile clicked at {tile.Coordinates}, " +
                              $"but current phase is {_turnManager.CurrentPhase}. " +
@@ -284,29 +288,66 @@ namespace Cryptid.Core
         {
             if (!isCorrect)
             {
-                Debug.Log($"[GameBootstrapper] Wrong search! Applying penalty...");
-                // Apply penalty: all other players reveal their clue result
-                _turnManager.ApplySearchPenalty(tile, playerIndex, _mapGenerator.WorldMap);
+                Debug.Log($"[GameBootstrapper] Wrong search! Player {playerIndex + 1} must place penalty cube.");
+                // PenaltyPlacement phase is now active — handled via tile click or AI auto-pick
+
+                // If it's an AI player, auto-select penalty tile
+                if (playerIndex != 0 && _turnManager.CurrentPhase == TurnPhase.PenaltyPlacement)
+                {
+                    StartCoroutine(ExecuteAIPenaltyCoroutine(playerIndex));
+                }
             }
         }
 
         /// <summary>
-        /// Handles penalty token placement after a failed search.
-        /// Each opponent places a disc (match) or cube (no match) on the searched tile.
+        /// Handles penalty cube placed after a failed search.
+        /// The searcher places a cube on a tile where their own clue does NOT match.
         /// </summary>
-        private void HandleSearchPenalty(int respondingPlayer, HexCoordinates tile, bool clueMatches)
+        private void HandlePenaltyCubePlaced(int playerIndex, HexCoordinates tile)
         {
             if (_tokenPlacer == null) return;
 
-            TokenType tokenType = clueMatches ? TokenType.Disc : TokenType.Cube;
-            _tokenPlacer.PlaceTokenAt(tile, tokenType, respondingPlayer);
+            _tokenPlacer.PlaceTokenAt(tile, TokenType.Cube, playerIndex);
 
             // Log to UI
             if (_uiManager?.LogPanel != null)
             {
-                string token = clueMatches ? "disc" : "cube";
-                _uiManager.LogPanel.AddEntry(respondingPlayer,
-                    $"  Penalty: P{respondingPlayer + 1} reveals {token}");
+                _uiManager.LogPanel.AddEntry(playerIndex,
+                    $"  Penalty: P{playerIndex + 1} places cube at {tile}");
+            }
+        }
+
+        /// <summary>
+        /// Auto-picks a penalty tile for an AI player that failed a search.
+        /// Selects a random tile where the AI's own clue does NOT match.
+        /// </summary>
+        private IEnumerator ExecuteAIPenaltyCoroutine(int playerIndex)
+        {
+            float delay = _aiPlayer?.ActionDelay ?? 0.6f;
+            yield return new WaitForSeconds(delay);
+
+            if (_turnManager == null || _turnManager.CurrentPhase != TurnPhase.PenaltyPlacement)
+                yield break;
+
+            // Find tiles that do NOT match this player's clue
+            var clue = _currentPuzzle.PlayerClues[playerIndex];
+            var candidates = new System.Collections.Generic.List<HexCoordinates>();
+
+            foreach (var kvp in _mapGenerator.WorldMap)
+            {
+                if (!clue.Check(kvp.Value, _mapGenerator.WorldMap))
+                    candidates.Add(kvp.Key);
+            }
+
+            if (candidates.Count > 0)
+            {
+                var rng = new System.Random();
+                var penaltyTile = candidates[rng.Next(candidates.Count)];
+                _turnManager.SubmitPenaltyCube(penaltyTile, _mapGenerator.WorldMap);
+            }
+            else
+            {
+                Debug.LogError($"[GameBootstrapper] AI P{playerIndex + 1} has no non-matching tiles for penalty!");
             }
         }
 
@@ -395,6 +436,20 @@ namespace Cryptid.Core
             else
             {
                 _turnManager.SubmitSearch(tile);
+
+                // If search failed, penalty placement is handled by
+                // HandleSearchPerformed → ExecuteAIPenaltyCoroutine.
+                // Wait for penalty phase to complete before releasing AI lock.
+                if (_turnManager != null &&
+                    _turnManager.CurrentPhase == TurnPhase.PenaltyPlacement)
+                {
+                    // Keep AI lock until penalty coroutine finishes
+                    while (_turnManager != null &&
+                           _turnManager.CurrentPhase == TurnPhase.PenaltyPlacement)
+                    {
+                        yield return null;
+                    }
+                }
             }
 
             _isAITurnInProgress = false;
