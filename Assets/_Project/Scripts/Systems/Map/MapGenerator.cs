@@ -47,6 +47,15 @@ namespace Cryptid.Systems.Map
         public Dictionary<HexCoordinates, WorldTile> WorldMap { get; private set; }
             = new Dictionary<HexCoordinates, WorldTile>();
 
+        /// <summary>
+        /// Sets the random seed for procedural map generation.
+        /// Call before GenerateMap() to produce deterministic maps.
+        /// </summary>
+        public void SetSeed(int seed) => _mapSeed = seed;
+
+        /// <summary> The seed used for map generation. </summary>
+        public int MapSeed => _mapSeed;
+
         // ---------------------------------------------------------
         // Lifecycle
         // ---------------------------------------------------------

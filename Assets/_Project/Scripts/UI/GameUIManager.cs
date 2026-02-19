@@ -1,6 +1,7 @@
 using System;
 using Cryptid.Core;
 using Cryptid.Data;
+using Cryptid.Network;
 using Cryptid.Systems.Map;
 using Cryptid.Systems.Turn;
 using UnityEngine;
@@ -54,13 +55,16 @@ namespace Cryptid.UI
         // ---------------------------------------------------------
 
         private GameStateMachine _fsm;
-        private TurnManager _turnManager;
+        private ITurnState _turnState;
+        private TurnManager _turnManager; // null in network mode
+        private NetworkGameManager _netManager; // null in local mode
         private PuzzleSetup _puzzle;
+        private string _networkClue; // local player's clue in network mode
         private int _playerCount;
 
         /// <summary>Index of the human player. Action buttons only show for this player.</summary>
-        // All players are human-controlled in local mode.
-        // HumanPlayerIndex is kept for future network mode.
+        // All players are human-controlled in local mode (HumanPlayerIndex = -1).
+        // In network mode, set to the local player's index.
         public int HumanPlayerIndex { get; set; } = -1;
 
         // ---------------------------------------------------------
@@ -101,7 +105,10 @@ namespace Cryptid.UI
             UnsubscribeTurnEvents();
 
             _turnManager = turnManager;
+            _turnState = turnManager;
+            _netManager = null;
             _puzzle = puzzle;
+            _networkClue = null;
             _playerCount = playerCount;
 
             _turnManager.OnTurnStarted    += HandleTurnStarted;
@@ -244,32 +251,41 @@ namespace Cryptid.UI
         {
             // Update HUD
             _turnIndicator.UpdateDisplay(
-                _turnManager.TurnNumber, playerIndex, _turnManager.CurrentPhase);
+                _turnState.TurnNumber, playerIndex, _turnState.CurrentPhase);
 
-            // Show action buttons for all players in local mode
-            _actionPanel.UpdateForPhase(TurnPhase.ChooseAction);
+            // In network mode, only show action buttons on local player's turn
+            bool isMyTurn = HumanPlayerIndex < 0 || playerIndex == HumanPlayerIndex;
+            _actionPanel.UpdateForPhase(
+                isMyTurn ? TurnPhase.ChooseAction : TurnPhase.TurnEnd);
             _playerSelect.Hide();
 
-            // Update clue panel for the current player
+            // Update clue panel
             if (_puzzle != null && playerIndex < _puzzle.PlayerClues.Count)
             {
+                // Local mode: show current turn player's clue
                 _cluePanel.UpdateClue(playerIndex, _puzzle.PlayerClues[playerIndex].Description);
+            }
+            else if (_networkClue != null && HumanPlayerIndex >= 0)
+            {
+                // Network mode: always show local player's own clue
+                _cluePanel.UpdateClue(HumanPlayerIndex, _networkClue);
             }
 
             // Log
             _gameLogPanel.AddEntry(playerIndex,
-                $"--- Turn {_turnManager.TurnNumber}: Player {playerIndex + 1} ---");
+                $"--- Turn {_turnState.TurnNumber}: Player {playerIndex + 1} ---");
         }
 
         private void HandlePhaseChanged(int playerIndex, TurnPhase phase)
         {
             // Update HUD phase text
-            _turnIndicator.UpdateDisplay(_turnManager.TurnNumber, playerIndex, phase);
+            _turnIndicator.UpdateDisplay(_turnState.TurnNumber, playerIndex, phase);
 
-            // Show action UI for all players in local mode
-            _actionPanel.UpdateForPhase(phase);
+            // In network mode, only show action UI on local player's turn
+            bool isMyTurn = HumanPlayerIndex < 0 || playerIndex == HumanPlayerIndex;
+            _actionPanel.UpdateForPhase(isMyTurn ? phase : TurnPhase.TurnEnd);
 
-            if (phase == TurnPhase.SelectTile)
+            if (phase == TurnPhase.SelectTile && isMyTurn)
             {
                 int defaultTarget = (playerIndex + 1) % _playerCount;
                 _playerSelect.Show(playerIndex, defaultTarget, _playerCount);
@@ -292,9 +308,9 @@ namespace Cryptid.UI
             _gameLogPanel.AddEntry(responding,
                 $"P{responding + 1} responds: {(result ? "YES" : "NO")} ({token})");
 
-            if (!result && _turnManager != null)
+            if (!result && _turnState != null)
             {
-                int asker = _turnManager.CurrentPlayerIndex;
+                int asker = _turnState.CurrentPlayerIndex;
                 _gameLogPanel.AddEntry(asker,
                     $"  → P{asker + 1} must place a cube on a non-matching tile");
             }
@@ -364,6 +380,72 @@ namespace Cryptid.UI
         }
 
         // ---------------------------------------------------------
+        // Network Gameplay Binding
+        // ---------------------------------------------------------
+
+        /// <summary>
+        /// Binds the UI to a NetworkGameManager for network mode.
+        /// Called by NetworkGameManager after setup is complete.
+        /// Subscribes to network events instead of TurnManager events.
+        /// </summary>
+        public void BindNetworkGameplay(NetworkGameManager netMgr, int playerCount)
+        {
+            UnsubscribeTurnEvents();
+            UnsubscribeNetworkEvents();
+
+            _turnManager = null;
+            _netManager = netMgr;
+            _turnState = netMgr;
+            _puzzle = null;
+            _networkClue = netMgr.MyClueDescription;
+            _playerCount = playerCount;
+
+            // Subscribe to network events (same signatures as TurnManager)
+            netMgr.OnTurnStarted       += HandleTurnStarted;
+            netMgr.OnPhaseChanged      += HandlePhaseChanged;
+            netMgr.OnQuestionAsked     += HandleQuestionAsked;
+            netMgr.OnResponseGiven     += HandleResponseGiven;
+            netMgr.OnSearchPerformed   += HandleSearchPerformed;
+            netMgr.OnSearchDiscPlaced  += HandleSearchDiscPlaced;
+            netMgr.OnSearchVerification += HandleSearchVerification;
+            netMgr.OnGameWon           += HandleGameWon;
+
+            // Receive clue updates
+            netMgr.OnClueReceived += clue => _networkClue = clue;
+
+            // Bind tile hover
+            var tileInteraction = GameService.Get<TileInteractionSystem>();
+            if (tileInteraction != null)
+                tileInteraction.OnTileHovered += HandleTileHovered;
+
+            // Show playing state UI
+            _turnIndicator.gameObject.SetActive(true);
+            _cluePanel.gameObject.SetActive(true);
+            _gameLogPanel.gameObject.SetActive(true);
+            _tileInfoPanel.gameObject.SetActive(true);
+            _gameOverPanel.Hide();
+            _gameLogPanel.AddSystemMessage("=== Network Game Started ===");
+
+            // Show initial clue
+            if (_networkClue != null && HumanPlayerIndex >= 0)
+                _cluePanel.UpdateClue(HumanPlayerIndex, _networkClue);
+        }
+
+        /// <summary>
+        /// Shows the game over panel with network-provided info.
+        /// Called by NetworkGameManager when the game ends.
+        /// </summary>
+        public void ShowNetworkGameOver(int winnerIndex, string answerCoords)
+        {
+            string answerInfo = !string.IsNullOrEmpty(answerCoords)
+                ? $"The Cryptid was at {answerCoords}"
+                : "";
+            _gameOverPanel.Show(winnerIndex, answerInfo);
+            _actionPanel.gameObject.SetActive(false);
+            _playerSelect.Hide();
+        }
+
+        // ---------------------------------------------------------
         // Cleanup
         // ---------------------------------------------------------
 
@@ -381,12 +463,27 @@ namespace Cryptid.UI
             _turnManager.OnGameWon          -= HandleGameWon;
         }
 
+        private void UnsubscribeNetworkEvents()
+        {
+            if (_netManager == null) return;
+
+            _netManager.OnTurnStarted       -= HandleTurnStarted;
+            _netManager.OnPhaseChanged      -= HandlePhaseChanged;
+            _netManager.OnQuestionAsked     -= HandleQuestionAsked;
+            _netManager.OnResponseGiven     -= HandleResponseGiven;
+            _netManager.OnSearchPerformed   -= HandleSearchPerformed;
+            _netManager.OnSearchDiscPlaced  -= HandleSearchDiscPlaced;
+            _netManager.OnSearchVerification -= HandleSearchVerification;
+            _netManager.OnGameWon           -= HandleGameWon;
+        }
+
         private void UnsubscribeAll()
         {
             if (_fsm != null)
                 _fsm.OnStateChanged -= HandleStateChanged;
 
             UnsubscribeTurnEvents();
+            UnsubscribeNetworkEvents();
 
             // Unsubscribe tile hover
             var tileInteraction = GameService.Get<TileInteractionSystem>();

@@ -1,5 +1,6 @@
 using Cryptid.Core;
 using Cryptid.Data;
+using Cryptid.Network;
 using Cryptid.Systems.Clue;
 using Cryptid.Systems.Gameplay;
 using Cryptid.Systems.Map;
@@ -128,7 +129,12 @@ namespace Cryptid.Core
         {
             _fsm.TransitionTo(GamePhase.Lobby);
 
-            if (_autoStart)
+            // If ConnectionManager exists, let it handle mode selection.
+            // Otherwise (backwards compat), auto-start if configured.
+            bool hasConnectionManager =
+                FindFirstObjectByType<Cryptid.Network.ConnectionManager>() != null;
+
+            if (!hasConnectionManager && _autoStart)
             {
                 _lobbyState.AddPlayer(); // Auto-join triggers Setup
             }
@@ -511,5 +517,43 @@ namespace Cryptid.Core
 
         /// <summary> The active turn manager. Null before Setup phase. </summary>
         public TurnManager TurnMgr => _turnManager;
+
+        /// <summary> The UI manager. </summary>
+        public GameUIManager UIManager => _uiManager;
+
+        // ---------------------------------------------------------
+        // Network Mode Support
+        // ---------------------------------------------------------
+
+        /// <summary>
+        /// Disables GameBootstrapper for network mode.
+        /// Unsubscribes from tile and UI events, disables Update loop.
+        /// Called by <c>ConnectionManager</c> when entering a network game.
+        /// </summary>
+        public void DisableForNetworkMode()
+        {
+            // Unsubscribe from tile clicks (NetworkGameManager will take over)
+            if (_tileInteraction != null)
+                _tileInteraction.OnTileSelected -= HandleTileClicked;
+
+            // Unsubscribe from UI events
+            if (_uiManager != null)
+            {
+                _uiManager.OnActionChosen -= HandleUIActionChosen;
+                _uiManager.OnRestartRequested -= HandleRestart;
+            }
+
+            enabled = false;
+            Debug.Log("[GameBootstrapper] Disabled for network mode.");
+        }
+
+        /// <summary>
+        /// Starts the local game. Called by <c>ConnectionManager</c>
+        /// when the user selects "Local Game".
+        /// </summary>
+        public void StartLocalGame()
+        {
+            _lobbyState.AddPlayer();
+        }
     }
 }

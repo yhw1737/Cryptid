@@ -61,7 +61,7 @@ namespace Cryptid.Systems.Turn
     ///   turnMgr.StartFirstTurn();
     ///   // ... game logic calls SubmitAction(), SubmitResponse(), etc.
     /// </summary>
-    public class TurnManager
+    public class TurnManager : ITurnState
     {
         // ---------------------------------------------------------
         // State
