@@ -282,6 +282,8 @@ namespace Cryptid.UI
             {
                 _gameLogPanel.AddEntry(player,
                     $"P{player + 1} searches {tile} - WRONG!");
+                _gameLogPanel.AddEntry(player,
+                    $"  → Place a cube on a non-matching tile");
             }
         }
 
