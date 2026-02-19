@@ -106,6 +106,19 @@ namespace Cryptid.Systems.Turn
         public event Action<int, HexCoordinates, bool> OnSearchPerformed;
 
         /// <summary>
+        /// Fired when the searcher places their disc at the start of a search.
+        /// Args: (playerIndex, tileCoords).
+        /// </summary>
+        public event Action<int, HexCoordinates> OnSearchDiscPlaced;
+
+        /// <summary>
+        /// Fired for each verifier during clockwise search verification.
+        /// Args: (verifierIndex, tileCoords, result).
+        /// YES → verifier places disc. NO → verifier places cube, search stops.
+        /// </summary>
+        public event Action<int, HexCoordinates, bool> OnSearchVerification;
+
+        /// <summary>
         /// Fired when the searcher places a penalty cube after a failed search.
         /// Args: (playerIndex, tileCoords).
         /// Per Cryptid rules, the searcher must place a cube on a tile
@@ -248,10 +261,17 @@ namespace Cryptid.Systems.Turn
 
         /// <summary>
         /// Player performs a Search: guesses the Cryptid's location.
-        /// If correct, they win. If wrong, they must place a penalty cube
-        /// on a tile where their own clue does NOT match (PenaltyPlacement phase).
+        /// 
+        /// Flow (per spec 5.3.B):
+        ///   1. Searcher places their disc on the tile.
+        ///   2. Clockwise verification: each other player checks their clue.
+        ///      - YES → verifier places disc, continue.
+        ///      - NO  → verifier places cube, search STOPS.
+        ///   3. All YES → searcher wins!
+        ///   4. Any NO  → searcher must place penalty cube on a non-matching tile.
         /// </summary>
-        public void SubmitSearch(HexCoordinates tileCoords)
+        public void SubmitSearch(HexCoordinates tileCoords,
+            IReadOnlyDictionary<HexCoordinates, WorldTile> worldMap)
         {
             if (_currentPhase != TurnPhase.Search)
             {
@@ -259,23 +279,46 @@ namespace Cryptid.Systems.Turn
                 return;
             }
 
-            bool isCorrect = tileCoords.Equals(_puzzle.AnswerTile.Coordinates);
-
-            OnSearchPerformed?.Invoke(_currentPlayerIndex, tileCoords, isCorrect);
-
-            if (isCorrect)
+            if (!worldMap.TryGetValue(tileCoords, out WorldTile tileData))
             {
-                Debug.Log($"[TurnManager] Player {_currentPlayerIndex + 1} found the Cryptid at {tileCoords}! WINNER!");
-                OnGameWon?.Invoke(_currentPlayerIndex);
+                Debug.LogError($"[TurnManager] Search: Tile {tileCoords} not found!");
+                return;
             }
-            else
+
+            // Step 1: Searcher places their disc
+            Debug.Log($"[TurnManager] Player {_currentPlayerIndex + 1} searches tile {tileCoords}.");
+            OnSearchDiscPlaced?.Invoke(_currentPlayerIndex, tileCoords);
+
+            // Step 2: Clockwise verification by other players
+            for (int i = 1; i < _playerCount; i++)
             {
-                Debug.Log($"[TurnManager] Player {_currentPlayerIndex + 1} searched {tileCoords} — WRONG! " +
-                         $"(Answer was {_puzzle.AnswerTile.Coordinates}). Must place penalty cube.");
-                // Transition to PenaltyPlacement — searcher must place a cube
-                // on a tile where their own clue does NOT match.
-                SetPhase(TurnPhase.PenaltyPlacement);
+                int verifier = (_currentPlayerIndex + i) % _playerCount;
+                var clue = _puzzle.PlayerClues[verifier];
+                bool result = clue.Check(tileData, worldMap);
+
+                string verdict = result ? "YES (disc)" : "NO (cube)";
+                Debug.Log($"[TurnManager] Verification: Player {verifier + 1} says {verdict} " +
+                         $"(Clue: {clue.Description})");
+
+                // Fire event so tokens are placed
+                OnSearchVerification?.Invoke(verifier, tileCoords, result);
+
+                if (!result)
+                {
+                    // Search denied by this verifier
+                    Debug.Log($"[TurnManager] Search DENIED by Player {verifier + 1}. " +
+                             $"Player {_currentPlayerIndex + 1} must place penalty cube.");
+                    OnSearchPerformed?.Invoke(_currentPlayerIndex, tileCoords, false);
+                    SetPhase(TurnPhase.PenaltyPlacement);
+                    return;
+                }
             }
+
+            // Step 3: All players confirmed — searcher wins!
+            Debug.Log($"[TurnManager] All players confirmed! " +
+                     $"Player {_currentPlayerIndex + 1} found the Cryptid at {tileCoords}!");
+            OnSearchPerformed?.Invoke(_currentPlayerIndex, tileCoords, true);
+            OnGameWon?.Invoke(_currentPlayerIndex);
         }
 
         /// <summary>

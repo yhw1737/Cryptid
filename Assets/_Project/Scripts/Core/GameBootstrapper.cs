@@ -194,6 +194,8 @@ namespace Cryptid.Core
             _turnManager.OnQuestionAsked += HandleQuestionAsked;
             _turnManager.OnResponseGiven += HandleResponseGiven;
             _turnManager.OnSearchPerformed += HandleSearchPerformed;
+            _turnManager.OnSearchDiscPlaced += HandleSearchDiscPlaced;
+            _turnManager.OnSearchVerification += HandleSearchVerification;
             _turnManager.OnPenaltyCubePlaced += HandlePenaltyCubePlaced;
             _turnManager.OnGameWon += HandleGameWon;
 
@@ -232,36 +234,71 @@ namespace Cryptid.Core
             if (_fsm.CurrentPhase != GamePhase.Playing || _turnManager == null) return;
             if (tile == null) return;
 
+            var coords = tile.Coordinates;
+            int currentPlayer = _turnManager.CurrentPlayerIndex;
+
             switch (_turnManager.CurrentPhase)
             {
                 case TurnPhase.SelectTile:
-                    // Use UI-selected target if available, fallback to next player
+                    if (!ValidateTileInteraction(coords, currentPlayer)) return;
                     int targetPlayer = (_uiManager != null && _uiManager.SelectedTargetPlayer >= 0)
                         ? _uiManager.SelectedTargetPlayer
-                        : (_turnManager.CurrentPlayerIndex + 1) % _playerCount;
-                    _turnManager.SubmitQuestion(tile.Coordinates, targetPlayer);
+                        : (currentPlayer + 1) % _playerCount;
+                    _turnManager.SubmitQuestion(coords, targetPlayer);
                     break;
 
                 case TurnPhase.Search:
-                    _turnManager.SubmitSearch(tile.Coordinates);
+                    if (!ValidateTileInteraction(coords, currentPlayer)) return;
+                    _turnManager.SubmitSearch(coords, _mapGenerator.WorldMap);
                     break;
 
                 case TurnPhase.PenaltyPlacement:
+                    if (!ValidateTileInteraction(coords, currentPlayer)) return;
                     bool accepted = _turnManager.SubmitPenaltyCube(
-                        tile.Coordinates, _mapGenerator.WorldMap);
+                        coords, _mapGenerator.WorldMap);
                     if (!accepted && _uiManager?.LogPanel != null)
                     {
-                        _uiManager.LogPanel.AddEntry(_turnManager.CurrentPlayerIndex,
+                        _uiManager.LogPanel.AddEntry(currentPlayer,
                             "  ⚠ That tile matches your clue! Choose a different tile.");
                     }
                     break;
 
                 default:
-                    Debug.Log($"[GameBootstrapper] Tile clicked at {tile.Coordinates}, " +
+                    Debug.Log($"[GameBootstrapper] Tile clicked at {coords}, " +
                              $"but current phase is {_turnManager.CurrentPhase}. " +
                              $"Press Q or S first.");
                     break;
             }
+        }
+
+        /// <summary>
+        /// Validates tile interaction per spec 5.3.A:
+        ///   1. Cube Blocker: no cubes on tile (permanently dead)
+        ///   2. No Self-Stacking: player has no existing tokens on tile
+        ///   3. Discs are Stackable: other players' discs are OK (implicit)
+        /// Shows UI feedback when validation fails.
+        /// </summary>
+        private bool ValidateTileInteraction(HexCoordinates coords, int playerIndex)
+        {
+            if (_tokenPlacer == null) return true;
+
+            if (_tokenPlacer.HasAnyCube(coords))
+            {
+                Debug.Log($"[GameBootstrapper] Tile {coords} blocked — has cube (permanently dead).");
+                _uiManager?.LogPanel?.AddEntry(playerIndex,
+                    "  ⚠ That tile has a cube — permanently blocked.");
+                return false;
+            }
+
+            if (_tokenPlacer.HasPlayerToken(coords, playerIndex))
+            {
+                Debug.Log($"[GameBootstrapper] Player {playerIndex + 1} already has a token at {coords}.");
+                _uiManager?.LogPanel?.AddEntry(playerIndex,
+                    "  ⚠ You already have a token on that tile.");
+                return false;
+            }
+
+            return true;
         }
 
         private void HandleQuestionAsked(int askingPlayer, int targetPlayer, HexCoordinates tile)
@@ -283,13 +320,33 @@ namespace Cryptid.Core
         {
             if (!isCorrect)
             {
-                Debug.Log($"[GameBootstrapper] Wrong search! Player {playerIndex + 1} must place penalty cube.");
+                Debug.Log($"[GameBootstrapper] Search failed! Player {playerIndex + 1} must place penalty cube.");
             }
         }
 
         /// <summary>
-        /// Handles penalty cube placed after a failed search.
-        /// The searcher places a cube on a tile where their own clue does NOT match.
+        /// Handles the searcher's initial disc placement at the start of a search.
+        /// </summary>
+        private void HandleSearchDiscPlaced(int playerIndex, HexCoordinates tile)
+        {
+            if (_tokenPlacer == null) return;
+            _tokenPlacer.PlaceTokenAt(tile, TokenType.Disc, playerIndex);
+        }
+
+        /// <summary>
+        /// Handles each verifier's response during clockwise search verification.
+        /// Places disc (YES) or cube (NO) for the verifying player.
+        /// </summary>
+        private void HandleSearchVerification(int verifier, HexCoordinates tile, bool result)
+        {
+            if (_tokenPlacer == null) return;
+            TokenType type = result ? TokenType.Disc : TokenType.Cube;
+            _tokenPlacer.PlaceTokenAt(tile, type, verifier);
+        }
+
+        /// <summary>
+        /// Handles penalty cube placed after a failed search or question.
+        /// The active player places a cube on a tile where their own clue does NOT match.
         /// </summary>
         private void HandlePenaltyCubePlaced(int playerIndex, HexCoordinates tile)
         {

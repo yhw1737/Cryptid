@@ -103,8 +103,10 @@ namespace Cryptid.UI
             _turnManager.OnPhaseChanged   += HandlePhaseChanged;
             _turnManager.OnQuestionAsked  += HandleQuestionAsked;
             _turnManager.OnResponseGiven  += HandleResponseGiven;
-            _turnManager.OnSearchPerformed += HandleSearchPerformed;
-            _turnManager.OnGameWon        += HandleGameWon;
+            _turnManager.OnSearchPerformed  += HandleSearchPerformed;
+            _turnManager.OnSearchDiscPlaced += HandleSearchDiscPlaced;
+            _turnManager.OnSearchVerification += HandleSearchVerification;
+            _turnManager.OnGameWon          += HandleGameWon;
         }
 
         // ---------------------------------------------------------
@@ -278,19 +280,32 @@ namespace Cryptid.UI
             }
         }
 
+        private void HandleSearchDiscPlaced(int player, HexCoordinates tile)
+        {
+            _gameLogPanel.AddEntry(player,
+                $"P{player + 1} searches {tile} — placing disc...");
+        }
+
+        private void HandleSearchVerification(int verifier, HexCoordinates tile, bool result)
+        {
+            string verdict = result ? "YES (disc)" : "NO (cube)";
+            _gameLogPanel.AddEntry(verifier,
+                $"  P{verifier + 1} verifies: {verdict}");
+        }
+
         private void HandleSearchPerformed(int player, HexCoordinates tile, bool correct)
         {
             if (correct)
             {
                 _gameLogPanel.AddEntry(player,
-                    $"P{player + 1} searches {tile} - CORRECT!");
+                    $"  Search SUCCESS! P{player + 1} wins!");
             }
             else
             {
                 _gameLogPanel.AddEntry(player,
-                    $"P{player + 1} searches {tile} - WRONG!");
+                    $"  Search FAILED!");
                 _gameLogPanel.AddEntry(player,
-                    $"  → Place a cube on a non-matching tile");
+                    $"  → P{player + 1} must place a cube on a non-matching tile");
             }
         }
 
@@ -328,8 +343,10 @@ namespace Cryptid.UI
             _turnManager.OnPhaseChanged    -= HandlePhaseChanged;
             _turnManager.OnQuestionAsked   -= HandleQuestionAsked;
             _turnManager.OnResponseGiven   -= HandleResponseGiven;
-            _turnManager.OnSearchPerformed -= HandleSearchPerformed;
-            _turnManager.OnGameWon         -= HandleGameWon;
+            _turnManager.OnSearchPerformed  -= HandleSearchPerformed;
+            _turnManager.OnSearchDiscPlaced -= HandleSearchDiscPlaced;
+            _turnManager.OnSearchVerification -= HandleSearchVerification;
+            _turnManager.OnGameWon          -= HandleGameWon;
         }
 
         private void UnsubscribeAll()

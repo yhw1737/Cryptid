@@ -268,6 +268,51 @@ namespace Cryptid.Systems.Gameplay
         public IReadOnlyList<TokenInfo> AllTokens => _allTokens;
 
         // ---------------------------------------------------------
+        // Tile Validation (Spec 5.3.A)
+        // ---------------------------------------------------------
+
+        /// <summary>
+        /// Returns true if any cube exists on this tile.
+        /// Rule 1 (Cube Blocker): tiles with cubes are permanently dead.
+        /// No tokens can be placed and no interactions allowed.
+        /// </summary>
+        public bool HasAnyCube(HexCoordinates coords)
+        {
+            if (!_tokensByTile.TryGetValue(coords, out var list)) return false;
+            foreach (var token in list)
+            {
+                if (token.Type == TokenType.Cube) return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Returns true if the specified player already has any token on this tile.
+        /// Rule 2 (No Self-Stacking): can't place or interact where you already have a token.
+        /// </summary>
+        public bool HasPlayerToken(HexCoordinates coords, int playerIndex)
+        {
+            if (!_tokensByTile.TryGetValue(coords, out var list)) return false;
+            foreach (var token in list)
+            {
+                if (token.PlayerIndex == playerIndex) return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Validates all 3 tile interaction rules from spec 5.3.A:
+        ///   1. Cube Blocker: no cubes on tile
+        ///   2. No Self-Stacking: player has no tokens on tile
+        ///   3. Discs are Stackable: other players' discs are OK (implicitly allowed)
+        /// </summary>
+        /// <returns>True if the tile is valid for this player to interact with.</returns>
+        public bool CanInteract(HexCoordinates coords, int playerIndex)
+        {
+            return !HasAnyCube(coords) && !HasPlayerToken(coords, playerIndex);
+        }
+
+        // ---------------------------------------------------------
         // Visual Creation
         // ---------------------------------------------------------
 
