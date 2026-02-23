@@ -106,7 +106,7 @@ namespace Cryptid.UI
             // Name text
             entry.NameText = UIFactory.CreateTMP(go.transform, "Name",
                 $"Player {index + 1}", fontSize: 16,
-                align: TextAlignmentOptions.MidlineCenter);
+                align: TextAlignmentOptions.Center);
             entry.NameText.margin = new Vector4(12, 0, 4, 0);
             entry.NameText.raycastTarget = false;
 

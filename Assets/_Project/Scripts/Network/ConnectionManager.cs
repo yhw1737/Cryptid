@@ -254,7 +254,7 @@ namespace Cryptid.Network
             entry.ReadyText = readyGo.AddComponent<TextMeshProUGUI>();
             entry.ReadyText.text = "\u2717";
             entry.ReadyText.fontSize = 20;
-            entry.ReadyText.alignment = TextAlignmentOptions.MidlineCenter;
+            entry.ReadyText.alignment = TextAlignmentOptions.Center;
             entry.ReadyText.color = new Color(0.6f, 0.6f, 0.6f);
 
             entry.Root = go;
