@@ -169,9 +169,6 @@ namespace Cryptid.Core
         /// </summary>
         private void PerformSetup()
         {
-            // Step 0: Disable legacy debug components that conflict with procedural map
-            DisableLegacyDebuggers();
-
             // Step 1: Generate map (if not already done by MapGenerator.Start)
             if (_mapGenerator.WorldMap == null || _mapGenerator.WorldMap.Count == 0)
             {
@@ -212,41 +209,6 @@ namespace Cryptid.Core
             _turnManager.OnGameWon += HandleGameWon;
 
             Debug.Log("[GameBootstrapper] Setup complete. Puzzle ready.");
-        }
-
-        /// <summary>
-        /// Disables legacy debug components (MapPieceDebugger, MapDebugOverlay,
-        /// PuzzleDebugVisualizer) to prevent visual conflicts with the procedural map.
-        /// </summary>
-        private void DisableLegacyDebuggers()
-        {
-            foreach (var debugger in FindObjectsByType<MapPieceDebugger>(
-                FindObjectsSortMode.None))
-            {
-                debugger.gameObject.SetActive(false);
-                Debug.Log($"[GameBootstrapper] Disabled legacy debugger: {debugger.name}");
-            }
-
-            foreach (var overlay in FindObjectsByType<MapDebugOverlay>(
-                FindObjectsSortMode.None))
-            {
-                overlay.enabled = false;
-                Debug.Log($"[GameBootstrapper] Disabled MapDebugOverlay on: {overlay.name}");
-            }
-
-            foreach (var viz in FindObjectsByType<Cryptid.Systems.Clue.PuzzleDebugVisualizer>(
-                FindObjectsSortMode.None))
-            {
-                viz.gameObject.SetActive(false);
-                Debug.Log($"[GameBootstrapper] Disabled PuzzleDebugVisualizer: {viz.name}");
-            }
-
-            foreach (var hexDbg in FindObjectsByType<HexGridDebugger>(
-                FindObjectsSortMode.None))
-            {
-                hexDbg.gameObject.SetActive(false);
-                Debug.Log($"[GameBootstrapper] Disabled HexGridDebugger: {hexDbg.name}");
-            }
         }
 
         /// <summary>

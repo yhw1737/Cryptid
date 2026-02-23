@@ -54,6 +54,8 @@ namespace Cryptid.Network
             public const byte GamePhaseChanged = 10;
             public const byte ShowError       = 11;
             public const byte PenaltyResult   = 12;
+            public const byte LobbyUpdate    = 13;
+            public const byte PlayerNames    = 14;
 
             // Client → Host
             public const byte ChooseAction    = 50;
@@ -61,6 +63,19 @@ namespace Cryptid.Network
             public const byte SubmitSearch    = 52;
             public const byte SubmitPenalty   = 53;
             public const byte RequestStart    = 54;
+            public const byte SetNickname    = 55;
+            public const byte ToggleReady    = 56;
+        }
+
+        // =============================================================
+        // Lobby Data
+        // =============================================================
+
+        public struct LobbyPlayerInfo
+        {
+            public int PlayerIndex;
+            public string Nickname;
+            public bool IsReady;
         }
 
         // =============================================================
@@ -84,6 +99,9 @@ namespace Cryptid.Network
         private PuzzleSetup _puzzle;
         private PuzzleGenerator _puzzleGenerator;
         private readonly Dictionary<ulong, int> _clientPlayerMap = new();
+        private readonly Dictionary<ulong, string> _playerNicknames = new();
+        private readonly Dictionary<ulong, bool> _playerReady = new();
+        private string[] _playerNames;
 
         // =============================================================
         // Scene References
@@ -112,6 +130,7 @@ namespace Cryptid.Network
         public bool IsHost => _isHost;
         public GamePhase CurrentGamePhase => _gamePhase;
         public int ConnectedPlayerCount => _clientPlayerMap.Count;
+        public string[] AllPlayerNames => _playerNames;
 
         // =============================================================
         // Events (same signatures as TurnManager for UI binding)
@@ -138,6 +157,12 @@ namespace Cryptid.Network
 
         /// <summary>Fired when a player connects/disconnects (host only). Arg: current player count.</summary>
         public event Action<int> OnPlayerCountChanged;
+
+        /// <summary>Fired when lobby state changes (player list, nicknames, ready status).</summary>
+        public event Action<LobbyPlayerInfo[]> OnLobbyUpdated;
+
+        /// <summary>Fired on clients when the host sends all player names at game start.</summary>
+        public event Action<string[]> OnPlayerNamesReceived;
 
         // =============================================================
         // Initialization
@@ -179,6 +204,8 @@ namespace Cryptid.Network
                 // Host is player 0
                 _clientPlayerMap[NetworkManager.Singleton.LocalClientId] = 0;
                 _localPlayerIndex = 0;
+                _playerNicknames[NetworkManager.Singleton.LocalClientId] = "Player 1";
+                _playerReady[NetworkManager.Singleton.LocalClientId] = false;
 
                 // Listen for client connections
                 NetworkManager.Singleton.OnClientConnectedCallback += HandleClientConnected;
@@ -223,20 +250,29 @@ namespace Cryptid.Network
         private void HandleClientConnected(ulong clientId)
         {
             if (!_isHost) return;
-
-            // Skip self (host already assigned)
             if (clientId == NetworkManager.Singleton.LocalClientId) return;
+
+            // Enforce max 5 players
+            if (_clientPlayerMap.Count >= 5)
+            {
+                Debug.LogWarning($"[NetworkGameManager] Rejecting client {clientId} — max 5 players.");
+                NetworkManager.Singleton.DisconnectClient(clientId);
+                return;
+            }
 
             int playerIndex = _clientPlayerMap.Count;
             _clientPlayerMap[clientId] = playerIndex;
+            _playerNicknames[clientId] = $"Player {playerIndex + 1}";
+            _playerReady[clientId] = false;
 
-            // Tell the client their index
             SendToClient(clientId, NetMsg.AssignPlayer, w =>
             {
                 w.WriteValueSafe(playerIndex);
             });
 
             OnPlayerCountChanged?.Invoke(_clientPlayerMap.Count);
+            BroadcastLobbyUpdate();
+
             Debug.Log($"[NetworkGameManager] Client {clientId} → Player {playerIndex + 1} " +
                       $"({_clientPlayerMap.Count} players total)");
         }
@@ -247,7 +283,10 @@ namespace Cryptid.Network
 
             if (_clientPlayerMap.Remove(clientId))
             {
+                _playerNicknames.Remove(clientId);
+                _playerReady.Remove(clientId);
                 OnPlayerCountChanged?.Invoke(_clientPlayerMap.Count);
+                BroadcastLobbyUpdate();
                 Debug.Log($"[NetworkGameManager] Client {clientId} disconnected " +
                           $"({_clientPlayerMap.Count} players remain)");
             }
@@ -269,10 +308,19 @@ namespace Cryptid.Network
             }
 
             _playerCount = _clientPlayerMap.Count;
-            if (_playerCount < 2)
+            if (_playerCount < 3 || _playerCount > 5)
             {
-                Debug.LogWarning("[NetworkGameManager] Need at least 2 players!");
+                Debug.LogWarning($"[NetworkGameManager] Need 3-5 players! Current: {_playerCount}");
                 return;
+            }
+
+            // Build player names
+            _playerNames = new string[_playerCount];
+            foreach (var kvp in _clientPlayerMap)
+            {
+                int idx = kvp.Value;
+                _playerNames[idx] = _playerNicknames.TryGetValue(kvp.Key, out var n)
+                    ? n : $"Player {idx + 1}";
             }
 
             _gamePhase = GamePhase.Setup;
@@ -303,6 +351,15 @@ namespace Cryptid.Network
                 w.WriteValueSafe(mapSeed);
                 w.WriteValueSafe(_playerCount);
             });
+
+            // Send player names to all clients
+            SendToAllClients(NetMsg.PlayerNames, w =>
+            {
+                w.WriteValueSafe(_playerCount);
+                for (int i = 0; i < _playerCount; i++)
+                    WriteString(w, _playerNames[i]);
+            });
+            OnPlayerNamesReceived?.Invoke(_playerNames);
 
             // Send each client their clue (targeted)
             foreach (var kvp in _clientPlayerMap)
@@ -353,9 +410,6 @@ namespace Cryptid.Network
         {
             if (_mapGenerator == null) return;
 
-            // Disable legacy debuggers
-            DisableLegacyDebuggers();
-
             _mapGenerator.SetSeed(seed);
             _mapGenerator.GenerateMap();
             _mapGenerator.SpawnVisuals();
@@ -366,16 +420,88 @@ namespace Cryptid.Network
                 cam.CenterOnMap(_mapGenerator.WorldMap);
         }
 
-        private void DisableLegacyDebuggers()
+        // =============================================================
+        // Lobby: Public API
+        // =============================================================
+
+        /// <summary>Sets the local player's display name and notifies the host.</summary>
+        public void SetLocalNickname(string nickname)
         {
-            foreach (var d in FindObjectsByType<MapPieceDebugger>(FindObjectsSortMode.None))
-                d.gameObject.SetActive(false);
-            foreach (var d in FindObjectsByType<MapDebugOverlay>(FindObjectsSortMode.None))
-                d.enabled = false;
-            foreach (var d in FindObjectsByType<PuzzleDebugVisualizer>(FindObjectsSortMode.None))
-                d.gameObject.SetActive(false);
-            foreach (var d in FindObjectsByType<HexGridDebugger>(FindObjectsSortMode.None))
-                d.gameObject.SetActive(false);
+            if (string.IsNullOrWhiteSpace(nickname)) return;
+
+            if (_isHost)
+            {
+                var localId = NetworkManager.Singleton.LocalClientId;
+                if (_playerReady.TryGetValue(localId, out var ready) && ready) return;
+                _playerNicknames[localId] = nickname;
+                BroadcastLobbyUpdate();
+            }
+            else
+            {
+                SendToHost(NetMsg.SetNickname, w => WriteString(w, nickname));
+            }
+        }
+
+        /// <summary>Toggles the local player's ready state.</summary>
+        public void SetLocalReady(bool ready)
+        {
+            if (_isHost)
+            {
+                var localId = NetworkManager.Singleton.LocalClientId;
+                _playerReady[localId] = ready;
+                BroadcastLobbyUpdate();
+            }
+            else
+            {
+                SendToHost(NetMsg.ToggleReady, w => w.WriteValueSafe(ready));
+            }
+        }
+
+        /// <summary>Returns true if the host can start the game (3-5 players, all ready).</summary>
+        public bool CanStartGame()
+        {
+            if (!_isHost) return false;
+            int count = _clientPlayerMap.Count;
+            if (count < 3 || count > 5) return false;
+            foreach (var kvp in _playerReady)
+                if (!kvp.Value) return false;
+            return true;
+        }
+
+        private void BroadcastLobbyUpdate()
+        {
+            var infos = BuildLobbyPlayerInfos();
+            OnLobbyUpdated?.Invoke(infos);
+
+            SendToAllClients(NetMsg.LobbyUpdate, w =>
+            {
+                w.WriteValueSafe(infos.Length);
+                for (int i = 0; i < infos.Length; i++)
+                {
+                    w.WriteValueSafe(infos[i].PlayerIndex);
+                    WriteString(w, infos[i].Nickname);
+                    w.WriteValueSafe(infos[i].IsReady);
+                }
+            });
+        }
+
+        private LobbyPlayerInfo[] BuildLobbyPlayerInfos()
+        {
+            var infos = new LobbyPlayerInfo[_clientPlayerMap.Count];
+            int idx = 0;
+            foreach (var kvp in _clientPlayerMap)
+            {
+                infos[idx] = new LobbyPlayerInfo
+                {
+                    PlayerIndex = kvp.Value,
+                    Nickname = _playerNicknames.TryGetValue(kvp.Key, out var name)
+                        ? name : $"Player {kvp.Value + 1}",
+                    IsReady = _playerReady.TryGetValue(kvp.Key, out var r) && r
+                };
+                idx++;
+            }
+            System.Array.Sort(infos, (a, b) => a.PlayerIndex.CompareTo(b.PlayerIndex));
+            return infos;
         }
 
         // =============================================================
@@ -668,6 +794,8 @@ namespace Cryptid.Network
                 case NetMsg.GamePhaseChanged: Handle_GamePhaseChanged(reader); break;
                 case NetMsg.ShowError:        Handle_ShowError(reader); break;
                 case NetMsg.PenaltyResult:    Handle_PenaltyResult(reader); break;
+                case NetMsg.LobbyUpdate:     Handle_LobbyUpdate(reader); break;
+                case NetMsg.PlayerNames:     Handle_PlayerNames(reader); break;
 
                 // Client → Host messages
                 case NetMsg.ChooseAction:     Handle_ChooseAction(senderId, reader); break;
@@ -675,6 +803,8 @@ namespace Cryptid.Network
                 case NetMsg.SubmitSearch:     Handle_SubmitSearch(senderId, reader); break;
                 case NetMsg.SubmitPenalty:     Handle_SubmitPenalty(senderId, reader); break;
                 case NetMsg.RequestStart:     Handle_RequestStart(senderId); break;
+                case NetMsg.SetNickname:     Handle_SetNickname(senderId, reader); break;
+                case NetMsg.ToggleReady:     Handle_ToggleReady(senderId, reader); break;
 
                 default:
                     Debug.LogWarning($"[NetworkGameManager] Unknown message type: {msgType}");
@@ -877,7 +1007,53 @@ namespace Cryptid.Network
         {
             if (!_isHost) return;
             Debug.Log($"[NetworkGameManager] Client {senderId} requested game start.");
-            // Only host triggers start directly (via ConnectionManager button)
+        }
+
+        private void Handle_SetNickname(ulong senderId, FastBufferReader reader)
+        {
+            if (!_isHost) return;
+            string nickname = ReadString(reader);
+            if (!_clientPlayerMap.ContainsKey(senderId)) return;
+            if (_playerReady.TryGetValue(senderId, out var ready) && ready) return;
+            _playerNicknames[senderId] = nickname;
+            BroadcastLobbyUpdate();
+        }
+
+        private void Handle_ToggleReady(ulong senderId, FastBufferReader reader)
+        {
+            if (!_isHost) return;
+            reader.ReadValueSafe(out bool readyState);
+            if (!_clientPlayerMap.ContainsKey(senderId)) return;
+            _playerReady[senderId] = readyState;
+            BroadcastLobbyUpdate();
+        }
+
+        private void Handle_LobbyUpdate(FastBufferReader reader)
+        {
+            reader.ReadValueSafe(out int count);
+            var infos = new LobbyPlayerInfo[count];
+            for (int i = 0; i < count; i++)
+            {
+                reader.ReadValueSafe(out int playerIndex);
+                string nickname = ReadString(reader);
+                reader.ReadValueSafe(out bool isReady);
+                infos[i] = new LobbyPlayerInfo
+                {
+                    PlayerIndex = playerIndex,
+                    Nickname = nickname,
+                    IsReady = isReady
+                };
+            }
+            OnLobbyUpdated?.Invoke(infos);
+        }
+
+        private void Handle_PlayerNames(FastBufferReader reader)
+        {
+            reader.ReadValueSafe(out int count);
+            _playerNames = new string[count];
+            for (int i = 0; i < count; i++)
+                _playerNames[i] = ReadString(reader);
+            OnPlayerNamesReceived?.Invoke(_playerNames);
         }
 
         // =============================================================

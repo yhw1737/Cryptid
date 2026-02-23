@@ -49,6 +49,7 @@ namespace Cryptid.UI
         private GameOverPanel _gameOverPanel;
         private GameLogPanel _gameLogPanel;
         private TileInfoPanel _tileInfoPanel;
+        private PlayerHUDPanel _playerHUD;
 
         // ---------------------------------------------------------
         // Bound game state (set via Bind methods)
@@ -126,6 +127,14 @@ namespace Cryptid.UI
             {
                 tileInteraction.OnTileHovered += HandleTileHovered;
             }
+
+            // Player HUD: default names for local mode
+            string[] defaultNames = new string[playerCount];
+            for (int i = 0; i < playerCount; i++)
+                defaultNames[i] = $"Player {i + 1}";
+            _playerHUD.SetupPlayers(defaultNames, HumanPlayerIndex);
+            _playerHUD.gameObject.SetActive(true);
+            _turnIndicator.SetPlayerNames(defaultNames);
         }
 
         // ---------------------------------------------------------
@@ -195,6 +204,12 @@ namespace Cryptid.UI
             _tileInfoPanel = tileInfoRoot.gameObject.AddComponent<TileInfoPanel>();
             _tileInfoPanel.Build(tileInfoRoot);
 
+            // Player HUD Panel (top bar, below turn indicator)
+            var playerHudRoot = UIFactory.CreatePanel(_canvas.transform,
+                "PlayerHUDPanel", UIFactory.PanelBg);
+            _playerHUD = playerHudRoot.gameObject.AddComponent<PlayerHUDPanel>();
+            _playerHUD.Build(playerHudRoot);
+
             // Initially hide all gameplay panels
             ShowLobbyState();
         }
@@ -213,6 +228,7 @@ namespace Cryptid.UI
             _gameOverPanel.Hide();
             _gameLogPanel.gameObject.SetActive(false);
             _tileInfoPanel.gameObject.SetActive(false);
+            _playerHUD.gameObject.SetActive(false);
         }
 
         private void HandleStateChanged(GamePhase oldPhase, GamePhase newPhase)
@@ -232,6 +248,7 @@ namespace Cryptid.UI
                     _cluePanel.gameObject.SetActive(true);
                     _gameLogPanel.gameObject.SetActive(true);
                     _tileInfoPanel.gameObject.SetActive(true);
+                    _playerHUD.gameObject.SetActive(true);
                     _gameOverPanel.Hide();
                     _gameLogPanel.AddSystemMessage("=== Game Started ===");
                     break;
@@ -252,6 +269,7 @@ namespace Cryptid.UI
             // Update HUD
             _turnIndicator.UpdateDisplay(
                 _turnState.TurnNumber, playerIndex, _turnState.CurrentPhase);
+            _playerHUD.UpdateActiveTurn(playerIndex);
 
             // In network mode, only show action buttons on local player's turn
             bool isMyTurn = HumanPlayerIndex < 0 || playerIndex == HumanPlayerIndex;
@@ -379,6 +397,12 @@ namespace Cryptid.UI
             OnRestartRequested?.Invoke();
         }
 
+        private void SetupNetworkPlayerHUD(string[] names)
+        {
+            _playerHUD.SetupPlayers(names, HumanPlayerIndex);
+            _turnIndicator.SetPlayerNames(names);
+        }
+
         // ---------------------------------------------------------
         // Network Gameplay Binding
         // ---------------------------------------------------------
@@ -423,8 +447,14 @@ namespace Cryptid.UI
             _cluePanel.gameObject.SetActive(true);
             _gameLogPanel.gameObject.SetActive(true);
             _tileInfoPanel.gameObject.SetActive(true);
+            _playerHUD.gameObject.SetActive(true);
             _gameOverPanel.Hide();
             _gameLogPanel.AddSystemMessage("=== Network Game Started ===");
+
+            // Player HUD: use network player names
+            netMgr.OnPlayerNamesReceived += SetupNetworkPlayerHUD;
+            if (netMgr.AllPlayerNames != null)
+                SetupNetworkPlayerHUD(netMgr.AllPlayerNames);
 
             // Show initial clue
             if (_networkClue != null && HumanPlayerIndex >= 0)
@@ -475,6 +505,7 @@ namespace Cryptid.UI
             _netManager.OnSearchDiscPlaced  -= HandleSearchDiscPlaced;
             _netManager.OnSearchVerification -= HandleSearchVerification;
             _netManager.OnGameWon           -= HandleGameWon;
+            _netManager.OnPlayerNamesReceived -= SetupNetworkPlayerHUD;
         }
 
         private void UnsubscribeAll()

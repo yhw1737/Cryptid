@@ -16,6 +16,7 @@ namespace Cryptid.UI
         private TextMeshProUGUI _playerText;
         private TextMeshProUGUI _phaseText;
         private Image _playerColorBar;
+        private string[] _playerNames;
 
         // ---------------------------------------------------------
         // Construction
@@ -65,12 +66,18 @@ namespace Cryptid.UI
         // Update
         // ---------------------------------------------------------
 
+        /// <summary>Sets player names so the indicator shows nicknames instead of "Player N".</summary>
+        public void SetPlayerNames(string[] names) => _playerNames = names;
+
         /// <summary>Updates all turn indicator fields.</summary>
         public void UpdateDisplay(int turnNumber, int playerIndex, TurnPhase phase)
         {
             _turnText.text = $"Turn {turnNumber}";
 
-            _playerText.text = $"Player {playerIndex + 1}'s Turn";
+            string displayName = _playerNames != null && playerIndex < _playerNames.Length
+                ? _playerNames[playerIndex]
+                : $"Player {playerIndex + 1}";
+            _playerText.text = $"{displayName}'s Turn";
             _playerText.color = UIFactory.GetPlayerColor(playerIndex);
 
             _playerColorBar.color = UIFactory.GetPlayerColor(playerIndex);

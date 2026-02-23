@@ -10,19 +10,8 @@ using UnityEngine.UI;
 namespace Cryptid.Network
 {
     /// <summary>
-    /// Manages the pre-game flow: mode selection (Local / Host / Join)
-    /// and NetworkManager lifecycle.
-    ///
-    /// Scene setup:
-    ///   1. Add this component to any GameObject in the scene.
-    ///   2. Assign the GameBootstrapper reference.
-    ///   3. The rest is created at runtime.
-    ///
-    /// Flow:
-    ///   Scene Load → Mode Selection UI → User picks mode:
-    ///     Local:  GameBootstrapper runs normally.
-    ///     Host:   NetworkManager starts as host, lobby shown, Start button.
-    ///     Join:   IP entry, connects as client, waits for host to start.
+    /// Pre-game flow: mode selection (Local / Host / Join), lobby with
+    /// nicknames &amp; ready states, and NetworkManager lifecycle.
     /// </summary>
     public class ConnectionManager : MonoBehaviour
     {
@@ -38,15 +27,37 @@ namespace Cryptid.Network
 
         private NetworkGameManager _networkGameManager;
         private Canvas _canvas;
+        private bool _isHost;
+        private bool _myReady;
 
-        // UI Elements
+        // UI Panels
         private GameObject _modePanel;
-        private GameObject _hostLobbyPanel;
         private GameObject _joinPanel;
-        private TextMeshProUGUI _hostStatusText;
+        private GameObject _lobbyPanel;
+
+        // Join panel elements
         private TextMeshProUGUI _joinStatusText;
         private TMP_InputField _ipInput;
-        private Button _startGameButton;
+
+        // Lobby elements
+        private TextMeshProUGUI _lobbyTitle;
+        private TextMeshProUGUI _lobbyIpText;
+        private TextMeshProUGUI _lobbyCountText;
+        private TMP_InputField _nicknameInput;
+        private Button _readyButton;
+        private TextMeshProUGUI _readyButtonLabel;
+        private Button _startButton;
+        private TextMeshProUGUI _startButtonLabel;
+
+        private struct LobbyEntry
+        {
+            public GameObject Root;
+            public Image ColorBar;
+            public TextMeshProUGUI NameText;
+            public TextMeshProUGUI ReadyText;
+        }
+
+        private readonly LobbyEntry[] _lobbyEntries = new LobbyEntry[5];
 
         // ---------------------------------------------------------
         // Lifecycle
@@ -54,15 +65,17 @@ namespace Cryptid.Network
 
         private void Awake()
         {
-            // Auto-find bootstrapper if not assigned
             if (_bootstrapper == null)
                 _bootstrapper = FindFirstObjectByType<GameBootstrapper>();
 
-            BuildModeSelectionUI();
+            BuildUI();
         }
 
         private void OnDestroy()
         {
+            if (_networkGameManager != null)
+                _networkGameManager.OnLobbyUpdated -= UpdateLobbyDisplay;
+
             if (_canvas != null)
                 Destroy(_canvas.gameObject);
         }
@@ -71,95 +84,198 @@ namespace Cryptid.Network
         // UI Construction
         // ---------------------------------------------------------
 
-        private void BuildModeSelectionUI()
+        private void BuildUI()
         {
             _canvas = UIFactory.CreateScreenCanvas("ConnectionUI_Canvas", 100);
             _canvas.transform.SetParent(transform);
 
-            // --- Mode Selection Panel (centered) ---
-            _modePanel = CreateCenteredPanel("ModePanel", 400, 350);
+            BuildModePanel();
+            BuildJoinPanel();
+            BuildLobbyPanel();
 
-            var modeRoot = _modePanel.GetComponent<RectTransform>();
-            UIFactory.AddVerticalLayout(modeRoot, spacing: 15,
+            _joinPanel.SetActive(false);
+            _lobbyPanel.SetActive(false);
+        }
+
+        private void BuildModePanel()
+        {
+            _modePanel = CreateCenteredPanel("ModePanel", 400, 350);
+            var root = _modePanel.GetComponent<RectTransform>();
+            UIFactory.AddVerticalLayout(root, spacing: 15,
                 padding: new RectOffset(30, 30, 30, 30));
 
-            // Title
-            var title = UIFactory.CreateTMP(modeRoot, "Title", "CRYPTID",
+            var title = UIFactory.CreateTMP(root, "Title", "CRYPTID",
                 fontSize: 42, color: UIFactory.Accent);
-            var titleRT = title.GetComponent<RectTransform>();
-            titleRT.sizeDelta = new Vector2(340, 60);
+            title.GetComponent<RectTransform>().sizeDelta = new Vector2(340, 60);
 
-            var subtitle = UIFactory.CreateTMP(modeRoot, "Subtitle",
+            var subtitle = UIFactory.CreateTMP(root, "Subtitle",
                 "Choose Game Mode", fontSize: 20);
-            var subRT = subtitle.GetComponent<RectTransform>();
-            subRT.sizeDelta = new Vector2(340, 30);
+            subtitle.GetComponent<RectTransform>().sizeDelta = new Vector2(340, 30);
 
-            // Buttons
-            var localBtn = UIFactory.CreateButton(modeRoot, "LocalBtn",
+            var localBtn = UIFactory.CreateButton(root, "LocalBtn",
                 "Local Game", 340, 55, new Color(0.18f, 0.80f, 0.44f));
             localBtn.onClick.AddListener(StartLocalGame);
 
-            var hostBtn = UIFactory.CreateButton(modeRoot, "HostBtn",
+            var hostBtn = UIFactory.CreateButton(root, "HostBtn",
                 "Host Game", 340, 55, new Color(0.20f, 0.60f, 0.86f));
             hostBtn.onClick.AddListener(ShowHostLobby);
 
-            var joinBtn = UIFactory.CreateButton(modeRoot, "JoinBtn",
+            var joinBtn = UIFactory.CreateButton(root, "JoinBtn",
                 "Join Game", 340, 55, new Color(0.95f, 0.61f, 0.07f));
             joinBtn.onClick.AddListener(ShowJoinPanel);
+        }
 
-            // --- Host Lobby Panel ---
-            _hostLobbyPanel = CreateCenteredPanel("HostLobbyPanel", 400, 300);
-
-            var hostRoot = _hostLobbyPanel.GetComponent<RectTransform>();
-            UIFactory.AddVerticalLayout(hostRoot, spacing: 12,
-                padding: new RectOffset(25, 25, 25, 25));
-
-            var hostTitle = UIFactory.CreateTMP(hostRoot, "Title",
-                "Hosting Game", fontSize: 28, color: UIFactory.Accent);
-            hostTitle.GetComponent<RectTransform>().sizeDelta = new Vector2(350, 40);
-
-            _hostStatusText = UIFactory.CreateTMP(hostRoot, "Status",
-                "Waiting for players...", fontSize: 18);
-            _hostStatusText.GetComponent<RectTransform>().sizeDelta = new Vector2(350, 80);
-
-            _startGameButton = UIFactory.CreateButton(hostRoot, "StartBtn",
-                "Start Game", 200, 50, new Color(0.18f, 0.80f, 0.44f));
-            _startGameButton.onClick.AddListener(HostStartGame);
-            _startGameButton.interactable = false; // Need 2+ players
-
-            var cancelHostBtn = UIFactory.CreateButton(hostRoot, "CancelBtn",
-                "Cancel", 200, 40, new Color(0.6f, 0.2f, 0.2f),
-                fontSize: 18);
-            cancelHostBtn.onClick.AddListener(CancelNetworking);
-
-            _hostLobbyPanel.SetActive(false);
-
-            // --- Join Panel ---
+        private void BuildJoinPanel()
+        {
             _joinPanel = CreateCenteredPanel("JoinPanel", 400, 280);
-
-            var joinRoot = _joinPanel.GetComponent<RectTransform>();
-            UIFactory.AddVerticalLayout(joinRoot, spacing: 12,
+            var root = _joinPanel.GetComponent<RectTransform>();
+            UIFactory.AddVerticalLayout(root, spacing: 12,
                 padding: new RectOffset(25, 25, 25, 25));
 
-            var joinTitle = UIFactory.CreateTMP(joinRoot, "Title",
+            var title = UIFactory.CreateTMP(root, "Title",
                 "Join Game", fontSize: 28, color: UIFactory.Accent);
-            joinTitle.GetComponent<RectTransform>().sizeDelta = new Vector2(350, 40);
+            title.GetComponent<RectTransform>().sizeDelta = new Vector2(350, 40);
 
             // IP Input
-            var inputGo = new GameObject("IPInput", typeof(RectTransform));
-            inputGo.transform.SetParent(joinRoot, false);
-            var inputRT = inputGo.GetComponent<RectTransform>();
-            inputRT.sizeDelta = new Vector2(340, 45);
+            _ipInput = CreateInputField(root, "IPInput", "127.0.0.1", 340, 45);
 
-            var inputBg = inputGo.AddComponent<Image>();
-            inputBg.color = new Color(0.15f, 0.15f, 0.2f, 1f);
+            var connectBtn = UIFactory.CreateButton(root, "ConnectBtn",
+                "Connect", 200, 50, new Color(0.20f, 0.60f, 0.86f));
+            connectBtn.onClick.AddListener(JoinGame);
 
-            _ipInput = inputGo.AddComponent<TMP_InputField>();
-            _ipInput.text = "127.0.0.1";
+            _joinStatusText = UIFactory.CreateTMP(root, "Status",
+                "", fontSize: 16);
+            _joinStatusText.GetComponent<RectTransform>().sizeDelta = new Vector2(350, 30);
 
-            // Input text area
+            var cancelBtn = UIFactory.CreateButton(root, "CancelBtn",
+                "Cancel", 200, 40, new Color(0.6f, 0.2f, 0.2f), fontSize: 18);
+            cancelBtn.onClick.AddListener(CancelNetworking);
+        }
+
+        private void BuildLobbyPanel()
+        {
+            _lobbyPanel = CreateCenteredPanel("LobbyPanel", 460, 560);
+            var root = _lobbyPanel.GetComponent<RectTransform>();
+            UIFactory.AddVerticalLayout(root, spacing: 8,
+                padding: new RectOffset(20, 20, 20, 20));
+
+            // Title
+            _lobbyTitle = UIFactory.CreateTMP(root, "Title", "LOBBY",
+                fontSize: 32, color: UIFactory.Accent);
+            _lobbyTitle.GetComponent<RectTransform>().sizeDelta = new Vector2(420, 45);
+
+            // IP text (host only)
+            _lobbyIpText = UIFactory.CreateTMP(root, "IpText", "",
+                fontSize: 16, color: new Color(0.7f, 0.7f, 0.7f));
+            _lobbyIpText.GetComponent<RectTransform>().sizeDelta = new Vector2(420, 22);
+
+            // Player count
+            _lobbyCountText = UIFactory.CreateTMP(root, "CountText",
+                "Players: 0 / 5", fontSize: 18);
+            _lobbyCountText.GetComponent<RectTransform>().sizeDelta = new Vector2(420, 26);
+
+            // Player list container
+            var listContainer = UIFactory.CreatePanel(root, "PlayerList",
+                new Color(0.06f, 0.06f, 0.09f, 0.8f));
+            listContainer.sizeDelta = new Vector2(420, 185);
+            var listVL = UIFactory.AddVerticalLayout(listContainer, spacing: 2,
+                padding: new RectOffset(5, 5, 5, 5),
+                childAlignment: TextAnchor.UpperCenter);
+            listVL.childControlWidth = true;
+            listVL.childForceExpandWidth = true;
+
+            for (int i = 0; i < 5; i++)
+            {
+                _lobbyEntries[i] = CreateLobbyEntry(listContainer, i);
+                _lobbyEntries[i].Root.SetActive(false);
+            }
+
+            // Nickname label + input
+            var nickLabel = UIFactory.CreateTMP(root, "NickLabel",
+                "Your Nickname:", fontSize: 16,
+                align: TextAlignmentOptions.MidlineLeft);
+            nickLabel.GetComponent<RectTransform>().sizeDelta = new Vector2(420, 22);
+
+            _nicknameInput = CreateInputField(root, "NicknameInput", "", 420, 40, 16);
+            _nicknameInput.characterLimit = 16;
+            _nicknameInput.onEndEdit.AddListener(OnNicknameChanged);
+
+            // Ready button
+            _readyButton = UIFactory.CreateButton(root, "ReadyBtn",
+                "\u2717 Not Ready", 300, 45, new Color(0.6f, 0.2f, 0.2f));
+            _readyButton.onClick.AddListener(ToggleReady);
+            _readyButtonLabel = _readyButton.GetComponentInChildren<TextMeshProUGUI>();
+
+            // Start game button (host only)
+            _startButton = UIFactory.CreateButton(root, "StartBtn",
+                "Start Game (3+ needed)", 300, 45, new Color(0.18f, 0.80f, 0.44f));
+            _startButton.onClick.AddListener(HostStartGame);
+            _startButton.interactable = false;
+            _startButtonLabel = _startButton.GetComponentInChildren<TextMeshProUGUI>();
+
+            // Cancel button
+            var cancelBtn = UIFactory.CreateButton(root, "CancelBtn",
+                "Cancel", 200, 35, new Color(0.6f, 0.2f, 0.2f), fontSize: 16);
+            cancelBtn.onClick.AddListener(CancelNetworking);
+        }
+
+        private LobbyEntry CreateLobbyEntry(RectTransform parent, int index)
+        {
+            var entry = new LobbyEntry();
+
+            var go = new GameObject($"PlayerEntry_{index}", typeof(RectTransform));
+            go.transform.SetParent(parent, false);
+            var rt = go.GetComponent<RectTransform>();
+            rt.sizeDelta = new Vector2(0, 33);
+            go.AddComponent<Image>().color = new Color(0.10f, 0.10f, 0.14f, 0.9f);
+            UIFactory.AddHorizontalLayout(rt, spacing: 8,
+                padding: new RectOffset(8, 8, 2, 2));
+
+            // Color bar
+            var barGo = new GameObject("ColorBar", typeof(RectTransform));
+            barGo.transform.SetParent(rt, false);
+            barGo.GetComponent<RectTransform>().sizeDelta = new Vector2(6, 28);
+            entry.ColorBar = barGo.AddComponent<Image>();
+            entry.ColorBar.color = UIFactory.GetPlayerColor(index);
+
+            // Name
+            var nameGo = new GameObject("Name", typeof(RectTransform));
+            nameGo.transform.SetParent(rt, false);
+            nameGo.GetComponent<RectTransform>().sizeDelta = new Vector2(280, 28);
+            entry.NameText = nameGo.AddComponent<TextMeshProUGUI>();
+            entry.NameText.text = $"Player {index + 1}";
+            entry.NameText.fontSize = 17;
+            entry.NameText.alignment = TextAlignmentOptions.MidlineLeft;
+
+            // Ready indicator
+            var readyGo = new GameObject("Ready", typeof(RectTransform));
+            readyGo.transform.SetParent(rt, false);
+            readyGo.GetComponent<RectTransform>().sizeDelta = new Vector2(60, 28);
+            entry.ReadyText = readyGo.AddComponent<TextMeshProUGUI>();
+            entry.ReadyText.text = "\u2717";
+            entry.ReadyText.fontSize = 20;
+            entry.ReadyText.alignment = TextAlignmentOptions.MidlineCenter;
+            entry.ReadyText.color = new Color(0.6f, 0.6f, 0.6f);
+
+            entry.Root = go;
+            return entry;
+        }
+
+        /// <summary>Creates a TMP_InputField with proper text area / viewport setup.</summary>
+        private static TMP_InputField CreateInputField(
+            Transform parent, string name, string defaultText,
+            float w, float h, float fontSize = 20)
+        {
+            var go = new GameObject(name, typeof(RectTransform));
+            go.transform.SetParent(parent, false);
+            go.GetComponent<RectTransform>().sizeDelta = new Vector2(w, h);
+            go.AddComponent<Image>().color = new Color(0.15f, 0.15f, 0.2f, 1f);
+
+            var input = go.AddComponent<TMP_InputField>();
+            input.text = defaultText;
+
             var textArea = new GameObject("TextArea", typeof(RectTransform));
-            textArea.transform.SetParent(inputGo.transform, false);
+            textArea.transform.SetParent(go.transform, false);
             var taRT = textArea.GetComponent<RectTransform>();
             taRT.anchorMin = Vector2.zero;
             taRT.anchorMax = Vector2.one;
@@ -167,26 +283,20 @@ namespace Cryptid.Network
             taRT.offsetMin = new Vector2(10, 0);
             taRT.offsetMax = new Vector2(-10, 0);
 
-            var inputText = UIFactory.CreateTMP(textArea.transform, "Text",
-                "", fontSize: 20, align: TextAlignmentOptions.MidlineLeft);
-            inputText.GetComponent<RectTransform>().sizeDelta = Vector2.zero;
-            _ipInput.textComponent = inputText;
-            _ipInput.textViewport = taRT;
+            var txt = UIFactory.CreateTMP(textArea.transform, "Text",
+                "", fontSize, align: TextAlignmentOptions.MidlineLeft);
+            txt.GetComponent<RectTransform>().sizeDelta = Vector2.zero;
+            input.textComponent = txt;
+            input.textViewport = taRT;
 
-            var connectBtn = UIFactory.CreateButton(joinRoot, "ConnectBtn",
-                "Connect", 200, 50, new Color(0.20f, 0.60f, 0.86f));
-            connectBtn.onClick.AddListener(JoinGame);
+            var placeholder = UIFactory.CreateTMP(textArea.transform, "Placeholder",
+                "Enter text...", fontSize,
+                align: TextAlignmentOptions.MidlineLeft,
+                color: new Color(0.5f, 0.5f, 0.5f));
+            placeholder.GetComponent<RectTransform>().sizeDelta = Vector2.zero;
+            input.placeholder = placeholder;
 
-            _joinStatusText = UIFactory.CreateTMP(joinRoot, "Status",
-                "", fontSize: 16);
-            _joinStatusText.GetComponent<RectTransform>().sizeDelta = new Vector2(350, 30);
-
-            var cancelJoinBtn = UIFactory.CreateButton(joinRoot, "CancelBtn",
-                "Cancel", 200, 40, new Color(0.6f, 0.2f, 0.2f),
-                fontSize: 18);
-            cancelJoinBtn.onClick.AddListener(CancelNetworking);
-
-            _joinPanel.SetActive(false);
+            return input;
         }
 
         private GameObject CreateCenteredPanel(string name, float width, float height)
@@ -206,28 +316,34 @@ namespace Cryptid.Network
         private void StartLocalGame()
         {
             HideAllPanels();
-
-            // Let GameBootstrapper handle everything
             if (_bootstrapper != null)
                 _bootstrapper.StartLocalGame();
-
             Debug.Log("[ConnectionManager] Starting local game.");
         }
 
         private void ShowHostLobby()
         {
+            _isHost = true;
+            _myReady = false;
             _modePanel.SetActive(false);
             _joinPanel.SetActive(false);
-            _hostLobbyPanel.SetActive(true);
 
             SetupNetworking();
             StartHost();
+
+            _lobbyPanel.SetActive(true);
+            _lobbyTitle.text = "LOBBY (Host)";
+            _startButton.gameObject.SetActive(true);
+            _lobbyIpText.gameObject.SetActive(true);
+            _lobbyIpText.text = $"IP: {GetLocalIPAddress()}:{_port}";
+            _nicknameInput.text = "Player 1";
+            UpdateReadyButtonVisual();
         }
 
         private void ShowJoinPanel()
         {
             _modePanel.SetActive(false);
-            _hostLobbyPanel.SetActive(false);
+            _lobbyPanel.SetActive(false);
             _joinPanel.SetActive(true);
             _joinStatusText.text = "";
         }
@@ -235,10 +351,8 @@ namespace Cryptid.Network
         private void HideAllPanels()
         {
             _modePanel.SetActive(false);
-            _hostLobbyPanel.SetActive(false);
+            _lobbyPanel.SetActive(false);
             _joinPanel.SetActive(false);
-
-            // Disable entire canvas after mode selected
             if (_canvas != null)
                 _canvas.gameObject.SetActive(false);
         }
@@ -249,14 +363,11 @@ namespace Cryptid.Network
 
         private void SetupNetworking()
         {
-            // Disable GameBootstrapper's input handling
             if (_bootstrapper != null)
                 _bootstrapper.DisableForNetworkMode();
 
-            // Create or find NetworkManager
             EnsureNetworkManager();
 
-            // Create NetworkGameManager
             if (_networkGameManager == null)
             {
                 var go = NetworkManager.Singleton.gameObject;
@@ -273,12 +384,10 @@ namespace Cryptid.Network
 
             var nm = go.AddComponent<NetworkManager>();
             var transport = go.AddComponent<UnityTransport>();
-
-            // Configure transport
             transport.SetConnectionData("127.0.0.1", _port);
 
-            // Assign transport to NetworkManager via config
-            // In NGO 2.x, NetworkConfig is auto-created
+            if (nm.NetworkConfig == null)
+                nm.NetworkConfig = new NetworkConfig();
             nm.NetworkConfig.NetworkTransport = transport;
 
             Debug.Log("[ConnectionManager] Created NetworkManager with UnityTransport.");
@@ -296,35 +405,18 @@ namespace Cryptid.Network
 
             NetworkManager.Singleton.StartHost();
             _networkGameManager.Initialize(isHost: true);
+            _networkGameManager.OnLobbyUpdated += UpdateLobbyDisplay;
 
-            // Update lobby UI on player join/leave
-            _networkGameManager.OnPlayerCountChanged += UpdateHostLobbyUI;
-
-            UpdateHostLobbyUI(_networkGameManager.ConnectedPlayerCount);
-
-            string localIP = GetLocalIPAddress();
-            Debug.Log($"[ConnectionManager] Hosting on {localIP}:{_port}");
+            Debug.Log($"[ConnectionManager] Hosting on {GetLocalIPAddress()}:{_port}");
         }
 
         private void HostStartGame()
         {
+            if (_networkGameManager == null || !_networkGameManager.CanStartGame()) return;
+
             HideAllPanels();
-            _networkGameManager.OnPlayerCountChanged -= UpdateHostLobbyUI;
+            _networkGameManager.OnLobbyUpdated -= UpdateLobbyDisplay;
             _networkGameManager.StartGame();
-        }
-
-        private void UpdateHostLobbyUI(int playerCount)
-        {
-            if (_hostStatusText != null)
-            {
-                string ip = GetLocalIPAddress();
-                _hostStatusText.text = $"IP: {ip}:{_port}\n" +
-                                       $"Players connected: {playerCount}\n" +
-                                       $"(Need at least 2 to start)";
-            }
-
-            if (_startGameButton != null)
-                _startGameButton.interactable = playerCount >= 2;
         }
 
         // ---------------------------------------------------------
@@ -355,10 +447,21 @@ namespace Cryptid.Network
         {
             if (clientId != NetworkManager.Singleton.LocalClientId) return;
 
-            _joinStatusText.text = "Connected! Waiting for host to start...";
             Debug.Log("[ConnectionManager] Connected to host.");
 
-            // Hide join panel eventually (when game starts via S2C_SetupMap)
+            _isHost = false;
+            _myReady = false;
+            _joinPanel.SetActive(false);
+            _lobbyPanel.SetActive(true);
+            _startButton.gameObject.SetActive(false);
+            _lobbyIpText.gameObject.SetActive(false);
+            _lobbyTitle.text = "LOBBY";
+
+            int idx = _networkGameManager.LocalPlayerIndex;
+            _nicknameInput.text = idx >= 0 ? $"Player {idx + 1}" : "Player";
+            UpdateReadyButtonVisual();
+
+            _networkGameManager.OnLobbyUpdated += UpdateLobbyDisplay;
             _networkGameManager.OnGamePhaseChanged += phase =>
             {
                 if (phase == GamePhase.Playing)
@@ -374,11 +477,90 @@ namespace Cryptid.Network
         }
 
         // ---------------------------------------------------------
+        // Lobby Interaction
+        // ---------------------------------------------------------
+
+        private void OnNicknameChanged(string nickname)
+        {
+            if (_myReady) return;
+            if (string.IsNullOrWhiteSpace(nickname)) return;
+            _networkGameManager?.SetLocalNickname(nickname.Trim());
+        }
+
+        private void ToggleReady()
+        {
+            _myReady = !_myReady;
+            _networkGameManager?.SetLocalReady(_myReady);
+            _nicknameInput.interactable = !_myReady;
+            UpdateReadyButtonVisual();
+        }
+
+        private void UpdateReadyButtonVisual()
+        {
+            if (_readyButtonLabel == null) return;
+
+            if (_myReady)
+            {
+                _readyButtonLabel.text = "\u2713 Ready";
+                var cb = _readyButton.colors;
+                cb.normalColor = new Color(0.18f, 0.80f, 0.44f);
+                cb.selectedColor = new Color(0.18f, 0.80f, 0.44f);
+                _readyButton.colors = cb;
+            }
+            else
+            {
+                _readyButtonLabel.text = "\u2717 Not Ready";
+                var cb = _readyButton.colors;
+                cb.normalColor = new Color(0.6f, 0.2f, 0.2f);
+                cb.selectedColor = new Color(0.6f, 0.2f, 0.2f);
+                _readyButton.colors = cb;
+            }
+        }
+
+        private void UpdateLobbyDisplay(NetworkGameManager.LobbyPlayerInfo[] players)
+        {
+            _lobbyCountText.text = $"Players: {players.Length} / 5";
+
+            for (int i = 0; i < 5; i++)
+            {
+                if (i < players.Length)
+                {
+                    _lobbyEntries[i].Root.SetActive(true);
+                    _lobbyEntries[i].ColorBar.color =
+                        UIFactory.GetPlayerColor(players[i].PlayerIndex);
+
+                    string suffix = (players[i].PlayerIndex == 0) ? " (Host)" : "";
+                    _lobbyEntries[i].NameText.text = $"{players[i].Nickname}{suffix}";
+
+                    _lobbyEntries[i].ReadyText.text = players[i].IsReady ? "\u2713" : "\u2717";
+                    _lobbyEntries[i].ReadyText.color = players[i].IsReady
+                        ? new Color(0.18f, 0.80f, 0.44f)
+                        : new Color(0.6f, 0.6f, 0.6f);
+                }
+                else
+                {
+                    _lobbyEntries[i].Root.SetActive(false);
+                }
+            }
+
+            if (_isHost && _startButton != null)
+            {
+                bool canStart = _networkGameManager.CanStartGame();
+                _startButton.interactable = canStart;
+                _startButtonLabel.text = players.Length >= 3
+                    ? "Start Game" : $"Start Game ({players.Length}/3 min)";
+            }
+        }
+
+        // ---------------------------------------------------------
         // Cancel / Cleanup
         // ---------------------------------------------------------
 
         private void CancelNetworking()
         {
+            if (_networkGameManager != null)
+                _networkGameManager.OnLobbyUpdated -= UpdateLobbyDisplay;
+
             if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening)
                 NetworkManager.Singleton.Shutdown();
 
@@ -388,13 +570,14 @@ namespace Cryptid.Network
                 _networkGameManager = null;
             }
 
-            // Re-enable GameBootstrapper
             if (_bootstrapper != null)
                 _bootstrapper.enabled = true;
 
-            // Show mode selection
+            _isHost = false;
+            _myReady = false;
+
             _modePanel.SetActive(true);
-            _hostLobbyPanel.SetActive(false);
+            _lobbyPanel.SetActive(false);
             _joinPanel.SetActive(false);
 
             if (_canvas != null)
