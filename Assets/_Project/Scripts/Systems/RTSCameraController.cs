@@ -9,6 +9,7 @@ namespace Cryptid.Systems
     /// 
     /// Controls:
     ///   - Right Mouse Button + Drag: Pan the camera
+    ///   - Middle Mouse Button + Drag: Orbit (rotate around look-at point)
     ///   - Scroll Wheel: Zoom in/out
     /// 
     /// The camera looks straight down at the XZ plane.
@@ -44,6 +45,27 @@ namespace Cryptid.Systems
         [SerializeField] private float _zoomSmoothing = 0.1f;
 
         // ---------------------------------------------------------
+        // Orbit Settings
+        // ---------------------------------------------------------
+
+        [Header("Orbit Settings (Middle Mouse)")]
+        [Tooltip("Horizontal rotation speed (degrees per pixel)")]
+        [SerializeField] private float _orbitSpeedX = 0.3f;
+
+        [Tooltip("Vertical rotation speed (degrees per pixel)")]
+        [SerializeField] private float _orbitSpeedY = 0.2f;
+
+        [Tooltip("Minimum vertical angle (degrees from horizon)")]
+        [SerializeField] private float _orbitPitchMin = 15f;
+
+        [Tooltip("Maximum vertical angle (degrees from horizon)")]
+        [SerializeField] private float _orbitPitchMax = 89f;
+
+        [Tooltip("Smoothing factor for orbit rotation (lower = smoother)")]
+        [Range(0.01f, 1f)]
+        [SerializeField] private float _orbitSmoothing = 0.15f;
+
+        // ---------------------------------------------------------
         // Internal State
         // ---------------------------------------------------------
 
@@ -52,6 +74,15 @@ namespace Cryptid.Systems
         private float _targetZoom;
         private Camera _cam;
         private bool _isPanning;
+
+        // Orbit state
+        private bool _isOrbiting;
+        private Vector2 _lastMouseScreenPos;
+        private float _targetYaw;
+        private float _targetPitch = 60f; // Start at 60° from horizon (looking mostly down)
+        private float _currentYaw;
+        private float _currentPitch = 60f;
+        private Vector3 _orbitPivot; // Point we orbit around
 
         // Input System references
         private Mouse _mouse;
@@ -76,7 +107,18 @@ namespace Cryptid.Systems
         private void Start()
         {
             _targetPosition = transform.position;
-            _targetZoom = transform.position.y;
+            _targetZoom = _cam != null && _cam.orthographic
+                ? _cam.orthographicSize
+                : transform.position.y;
+
+            // Initialize orbit angles from current rotation
+            Vector3 euler = transform.eulerAngles;
+            _targetYaw = euler.y;
+            _currentYaw = euler.y;
+            _targetPitch = Mathf.Clamp(euler.x, _orbitPitchMin, _orbitPitchMax);
+            _currentPitch = _targetPitch;
+
+            _orbitPivot = GetLookAtPoint();
         }
 
         private void Update()
@@ -88,6 +130,7 @@ namespace Cryptid.Systems
             }
 
             HandlePanInput();
+            HandleOrbitInput();
             HandleZoomInput();
             ApplyMovement();
         }
@@ -126,6 +169,57 @@ namespace Cryptid.Systems
         }
 
         // ---------------------------------------------------------
+        // Orbit Logic (Middle Mouse Button)
+        // ---------------------------------------------------------
+
+        private void HandleOrbitInput()
+        {
+            // Start orbiting on middle mouse press
+            if (_mouse.middleButton.wasPressedThisFrame)
+            {
+                _isOrbiting = true;
+                _lastMouseScreenPos = _mouse.position.ReadValue();
+
+                // Set orbit pivot to the point the camera is looking at
+                _orbitPivot = GetLookAtPoint();
+            }
+
+            // Stop orbiting on release
+            if (_mouse.middleButton.wasReleasedThisFrame)
+            {
+                _isOrbiting = false;
+            }
+
+            // Calculate rotation delta while dragging
+            if (_isOrbiting)
+            {
+                Vector2 currentScreenPos = _mouse.position.ReadValue();
+                Vector2 delta = currentScreenPos - _lastMouseScreenPos;
+
+                _targetYaw += delta.x * _orbitSpeedX;
+                _targetPitch -= delta.y * _orbitSpeedY;
+                _targetPitch = Mathf.Clamp(_targetPitch, _orbitPitchMin, _orbitPitchMax);
+
+                _lastMouseScreenPos = currentScreenPos;
+            }
+        }
+
+        /// <summary>
+        /// Gets the point the camera is looking at on the ground plane.
+        /// </summary>
+        private Vector3 GetLookAtPoint()
+        {
+            Ray ray = new Ray(transform.position, transform.forward);
+            var groundPlane = new Plane(Vector3.up, Vector3.zero);
+
+            if (groundPlane.Raycast(ray, out float distance))
+                return ray.GetPoint(distance);
+
+            // Fallback: project straight down
+            return new Vector3(transform.position.x, 0f, transform.position.z);
+        }
+
+        // ---------------------------------------------------------
         // Zoom Logic (Scroll Wheel)
         // ---------------------------------------------------------
 
@@ -150,13 +244,39 @@ namespace Cryptid.Systems
 
         private void ApplyMovement()
         {
-            // Smoothly interpolate position (XZ pan)
-            Vector3 smoothedPos = Vector3.Lerp(
-                transform.position,
-                new Vector3(_targetPosition.x, transform.position.y, _targetPosition.z),
-                _panSmoothing);
+            // Smoothly interpolate orbit angles
+            _currentYaw = Mathf.Lerp(_currentYaw, _targetYaw, _orbitSmoothing);
+            _currentPitch = Mathf.Lerp(_currentPitch, _targetPitch, _orbitSmoothing);
 
-            transform.position = smoothedPos;
+            // Calculate camera position from orbit angles + zoom distance
+            float pitchRad = _currentPitch * Mathf.Deg2Rad;
+            float yawRad = _currentYaw * Mathf.Deg2Rad;
+
+            // Orbit distance derived from zoom
+            float orbitDist = _targetZoom;
+            if (_cam != null && _cam.orthographic)
+            {
+                // In orthographic mode, actual distance doesn't matter for rendering,
+                // but we still use it for the camera position offset
+                orbitDist = Mathf.Max(20f, _targetZoom);
+            }
+
+            // Smoothly interpolate pan target
+            Vector3 smoothTarget = Vector3.Lerp(
+                _orbitPivot,
+                new Vector3(_targetPosition.x, 0f, _targetPosition.z),
+                _panSmoothing);
+            _orbitPivot = smoothTarget;
+
+            // Camera offset from pivot
+            Vector3 offset = new Vector3(
+                Mathf.Sin(yawRad) * Mathf.Cos(pitchRad),
+                Mathf.Sin(pitchRad),
+                -Mathf.Cos(yawRad) * Mathf.Cos(pitchRad)
+            ) * orbitDist;
+
+            transform.position = _orbitPivot + offset;
+            transform.LookAt(_orbitPivot);
 
             // Smoothly interpolate orthographic size (zoom)
             if (_cam != null && _cam.orthographic)
@@ -197,8 +317,8 @@ namespace Cryptid.Systems
         /// </summary>
         public void FocusOn(Vector3 worldPosition)
         {
-            _targetPosition = new Vector3(worldPosition.x, transform.position.y, worldPosition.z);
-            transform.position = _targetPosition;
+            _targetPosition = new Vector3(worldPosition.x, 0f, worldPosition.z);
+            _orbitPivot = _targetPosition;
         }
 
         /// <summary>
@@ -228,8 +348,8 @@ namespace Cryptid.Systems
 
             // Set zoom to fit the map with some margin
             _targetZoom = Mathf.Clamp(extent * 0.7f, _zoomMin, _zoomMax);
-            _targetPosition = new Vector3(center.x, transform.position.y, center.z);
-            transform.position = _targetPosition;
+            _targetPosition = new Vector3(center.x, 0f, center.z);
+            _orbitPivot = _targetPosition;
 
             if (_cam != null && _cam.orthographic)
                 _cam.orthographicSize = _targetZoom;
@@ -244,7 +364,10 @@ namespace Cryptid.Systems
         public void ResetCamera()
         {
             _targetPosition = Vector3.zero;
+            _orbitPivot = Vector3.zero;
             _targetZoom = (_zoomMin + _zoomMax) * 0.5f;
+            _targetYaw = 0f;
+            _targetPitch = 60f;
         }
     }
 }

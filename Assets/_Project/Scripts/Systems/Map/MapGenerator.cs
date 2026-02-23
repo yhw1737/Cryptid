@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using Cryptid.Core;
 using Cryptid.Data;
+using Cryptid.Network;
 using UnityEngine;
 
 namespace Cryptid.Systems.Map
@@ -62,7 +63,11 @@ namespace Cryptid.Systems.Map
 
         private void Start()
         {
-            if (_spawnOnStart)
+            // If ConnectionManager exists, defer map generation until mode is selected.
+            bool hasConnectionManager =
+                FindFirstObjectByType<Cryptid.Network.ConnectionManager>() != null;
+
+            if (_spawnOnStart && !hasConnectionManager)
             {
                 GenerateMap();
                 SpawnVisuals();
