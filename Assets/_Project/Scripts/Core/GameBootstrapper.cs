@@ -86,6 +86,13 @@ namespace Cryptid.Core
                 _uiManager = gameObject.AddComponent<GameUIManager>();
             GameService.Register(_uiManager);
 
+            // Initialize AudioManager (BGM starts automatically)
+            if (AudioManager.Instance == null)
+            {
+                var audioObj = new GameObject("[AudioManager]");
+                audioObj.AddComponent<AudioManager>();
+            }
+
             // Build FSM
             _fsm = new GameStateMachine();
             _puzzleGenerator = new PuzzleGenerator();
@@ -252,6 +259,7 @@ namespace Cryptid.Core
 
         private void HandleTurnStarted(int playerIndex)
         {
+            AudioManager.Instance?.PlayTurnStart();
             Debug.Log($"[GameBootstrapper] === Turn {_turnManager.TurnNumber} === " +
                      $"Player {playerIndex + 1} | Phase: {_turnManager.CurrentPhase} " +
                      $"| Press Q (question) or S (search)");
@@ -335,12 +343,18 @@ namespace Cryptid.Core
 
         private void HandleQuestionAsked(int askingPlayer, int targetPlayer, HexCoordinates tile)
         {
+            AudioManager.Instance?.PlayQuestionAsk();
             // Auto-respond for now (single-player debug)
             _turnManager.AutoRespond(_mapGenerator.WorldMap);
         }
 
         private void HandleResponseGiven(int respondingPlayer, HexCoordinates tile, bool result)
         {
+            if (result)
+                AudioManager.Instance?.PlayResponseYes();
+            else
+                AudioManager.Instance?.PlayResponseNo();
+
             if (_tokenPlacer == null) return;
 
             // Place token: Disc if clue matches (yes), Cube if not (no)
@@ -350,8 +364,11 @@ namespace Cryptid.Core
 
         private void HandleSearchPerformed(int playerIndex, HexCoordinates tile, bool isCorrect)
         {
-            if (!isCorrect)
+            if (isCorrect)
+                AudioManager.Instance?.PlaySearchSuccess();
+            else
             {
+                AudioManager.Instance?.PlaySearchFail();
                 Debug.Log($"[GameBootstrapper] Search failed! Player {playerIndex + 1} must place penalty cube.");
             }
         }
@@ -361,6 +378,7 @@ namespace Cryptid.Core
         /// </summary>
         private void HandleSearchDiscPlaced(int playerIndex, HexCoordinates tile)
         {
+            AudioManager.Instance?.PlayTokenPlace();
             if (_tokenPlacer == null) return;
             _tokenPlacer.PlaceTokenAt(tile, TokenType.Disc, playerIndex);
         }
@@ -382,6 +400,7 @@ namespace Cryptid.Core
         /// </summary>
         private void HandlePenaltyCubePlaced(int playerIndex, HexCoordinates tile)
         {
+            AudioManager.Instance?.PlayPenalty();
             if (_tokenPlacer == null) return;
 
             _tokenPlacer.PlaceTokenAt(tile, TokenType.Cube, playerIndex);
@@ -396,6 +415,7 @@ namespace Cryptid.Core
 
         private void HandleGameWon(int winnerIndex)
         {
+            AudioManager.Instance?.PlayGameWin();
             _gameOverState.WinnerIndex = winnerIndex;
             _playingState.TriggerGameOver();
         }
@@ -532,6 +552,10 @@ namespace Cryptid.Core
         private void HandleTimerTick(float remaining)
         {
             _uiManager?.TurnIndicator?.UpdateTimer(remaining);
+
+            // Play warning SFX at 5 seconds remaining
+            if (remaining <= 5f && remaining > 4.9f)
+                AudioManager.Instance?.PlayTimerWarning();
         }
 
         private void HandleTimerExpired()
@@ -548,11 +572,15 @@ namespace Cryptid.Core
                 // Auto-place penalty cube on a random valid tile
                 AutoPlacePenaltyCube(player);
             }
+            else if (phase == TurnPhase.TurnEnd)
+            {
+                // Turn already ended, do nothing
+            }
             else
             {
-                // Time ran out — skip turn
+                // Time ran out during regular turn — penalty: auto-place cube + skip
                 _uiManager?.LogPanel?.AddEntry(player, L.Get("timer_expired"));
-                _turnManager.SkipTurn();
+                AutoPlacePenaltyCube(player);
             }
         }
 

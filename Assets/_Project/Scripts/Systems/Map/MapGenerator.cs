@@ -239,38 +239,8 @@ namespace Cryptid.Systems.Map
                 return;
             }
 
-            if (_visualConfig == null)
-            {
-                Debug.LogWarning("[MapGenerator] No TileVisualConfig assigned. Spawning debug cubes.");
-                SpawnDebugCubes();
-                return;
-            }
-
-            Transform container = GetOrCreateContainer();
-
-            foreach (var kvp in WorldMap)
-            {
-                Vector3 worldPos = HexMetrics.HexToWorldPosition(kvp.Key);
-                WorldTile tile = kvp.Value;
-
-                // Spawn terrain base
-                GameObject terrainPrefab = _visualConfig.GetTerrainPrefab(tile.Terrain);
-                if (terrainPrefab != null)
-                {
-                    GameObject terrainObj = Instantiate(terrainPrefab, worldPos, Quaternion.identity, container);
-                    terrainObj.name = $"Tile_{kvp.Key}_{tile.Terrain}";
-                }
-
-                // Spawn structure on top
-                GameObject structurePrefab = _visualConfig.GetStructurePrefab(tile.Structure);
-                if (structurePrefab != null)
-                {
-                    GameObject structureObj = Instantiate(structurePrefab, worldPos, Quaternion.identity, container);
-                    structureObj.name = $"Structure_{kvp.Key}_{tile.Structure}";
-                }
-            }
-
-            Debug.Log($"[MapGenerator] Spawned visuals for {WorldMap.Count} tiles.");
+            // Always use enriched hex visuals (terrain heights, colors, bumps, decorations)
+            SpawnEnrichedTiles();
         }
 
         /// <summary>
@@ -282,7 +252,7 @@ namespace Cryptid.Systems.Map
         ///   5. Animal territory markers (colored capsules with labels)
         /// Water tiles are slightly lowered for visual depth.
         /// </summary>
-        private void SpawnDebugCubes()
+        private void SpawnEnrichedTiles()
         {
             MapDecorationDatabase.Load();
 
@@ -786,22 +756,37 @@ namespace Cryptid.Systems.Map
                     // Extract original color and texture before replacing shader
                     Color originalColor = Color.white;
                     Texture mainTex = null;
+                    bool hasExplicitColor = false;
 
-                    if (mat.HasProperty("_Color"))
-                        originalColor = mat.color;
-                    else if (mat.HasProperty("_BaseColor"))
+                    // Try all common color property names
+                    if (mat.HasProperty("_BaseColor"))
+                    {
                         originalColor = mat.GetColor("_BaseColor");
+                        hasExplicitColor = true;
+                    }
+                    else if (mat.HasProperty("_Color"))
+                    {
+                        originalColor = mat.color;
+                        hasExplicitColor = true;
+                    }
 
-                    if (mat.HasProperty("_MainTex"))
-                        mainTex = mat.mainTexture;
-                    else if (mat.HasProperty("_BaseMap"))
+                    // Try all common texture property names
+                    if (mat.HasProperty("_BaseMap"))
                         mainTex = mat.GetTexture("_BaseMap");
+                    else if (mat.HasProperty("_MainTex"))
+                        mainTex = mat.mainTexture;
+
+                    // If color is pure white and we have a texture, keep white
+                    // (texture * white = texture). If no texture and no explicit
+                    // color, use a neutral gray to avoid invisible white objects.
+                    if (!hasExplicitColor && mainTex == null)
+                        originalColor = new Color(0.6f, 0.6f, 0.6f);
 
                     // Create new URP material
                     var newMat = new Material(urpLit);
-                    newMat.color = originalColor;
+                    newMat.SetColor("_BaseColor", originalColor);
                     if (mainTex != null)
-                        newMat.mainTexture = mainTex;
+                        newMat.SetTexture("_BaseMap", mainTex);
 
                     materials[i] = newMat;
                     changed = true;

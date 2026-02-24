@@ -131,14 +131,14 @@ namespace Cryptid.Systems.Map
         {
             if (_selectIndicator != null) return;
 
-            // Create a square pyramid indicator above the tile
+            // Create an inverted pyramid indicator above the tile (apex pointing down)
             _selectIndicator = new GameObject("SelectIndicator");
             _selectIndicator.transform.SetParent(transform, false);
             _selectIndicator.transform.localPosition = new Vector3(0f, INDICATOR_BASE_HEIGHT, 0f);
             _selectIndicator.transform.localScale = Vector3.one * INDICATOR_SCALE;
 
             var mf = _selectIndicator.AddComponent<MeshFilter>();
-            mf.mesh = CreateSquarePyramidMesh();
+            mf.mesh = CreateInvertedPyramidMesh();
 
             var mr = _selectIndicator.AddComponent<MeshRenderer>();
             var mat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
@@ -156,36 +156,36 @@ namespace Cryptid.Systems.Map
             }
         }
 
-        /// <summary>Creates a square pyramid mesh (4 triangular sides + 1 square base).</summary>
-        private static Mesh CreateSquarePyramidMesh()
+        /// <summary>Creates an inverted square pyramid mesh (역사각뿔). Apex points downward.</summary>
+        private static Mesh CreateInvertedPyramidMesh()
         {
-            // 5 vertices: 4 base corners + 1 apex
+            // 5 vertices: 4 top corners + 1 apex pointing down
             Vector3[] verts =
             {
-                new(-1f, 0f, -1f), // 0: base front-left
-                new( 1f, 0f, -1f), // 1: base front-right
-                new( 1f, 0f,  1f), // 2: base back-right
-                new(-1f, 0f,  1f), // 3: base back-left
-                new( 0f, 1.5f, 0f) // 4: apex
+                new(-1f, 0f, -1f), // 0: top front-left
+                new( 1f, 0f, -1f), // 1: top front-right
+                new( 1f, 0f,  1f), // 2: top back-right
+                new(-1f, 0f,  1f), // 3: top back-left
+                new( 0f, -1.5f, 0f) // 4: apex (pointing down)
             };
 
-            // 6 triangles: 4 sides + 2 for the square base
+            // 6 triangles: 4 sides + 2 for the square top
             int[] triangles =
             {
-                // Front face
-                0, 4, 1,
+                // Front face (winding reversed for outward normals)
+                0, 1, 4,
                 // Right face
-                1, 4, 2,
+                1, 2, 4,
                 // Back face
-                2, 4, 3,
+                2, 3, 4,
                 // Left face
-                3, 4, 0,
-                // Base (two triangles, facing down)
-                0, 1, 2,
-                0, 2, 3
+                3, 0, 4,
+                // Top cap (two triangles, facing up)
+                0, 2, 1,
+                0, 3, 2
             };
 
-            var mesh = new Mesh { name = "SquarePyramid" };
+            var mesh = new Mesh { name = "InvertedPyramid" };
             mesh.vertices = verts;
             mesh.triangles = triangles;
             mesh.RecalculateNormals();

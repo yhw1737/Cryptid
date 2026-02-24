@@ -190,12 +190,24 @@ namespace Cryptid.Systems.Map
             }
 
             // Verify at least 3 terrain types are present
-            // (all 5 is ideal but depends on noise seed)
+            // and each terrain type has a minimum of 2 tiles
             if (counts.Count < 3)
             {
                 Debug.Log($"[ProceduralMapBuilder] Only {counts.Count}/5 terrain types present. " +
                          "Distribution invalid.");
                 return false;
+            }
+
+            // Ensure all 5 terrain types are present for balanced maps
+            foreach (TerrainType tt in config.TerrainOrder)
+            {
+                if (!counts.ContainsKey(tt) || counts[tt] < 2)
+                {
+                    Debug.Log($"[ProceduralMapBuilder] Terrain '{tt}' has " +
+                             $"{(counts.ContainsKey(tt) ? counts[tt] : 0)} tiles (min 2). " +
+                             "Distribution invalid.");
+                    return false;
+                }
             }
 
             return true;

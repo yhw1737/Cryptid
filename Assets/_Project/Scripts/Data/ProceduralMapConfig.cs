@@ -47,7 +47,7 @@ namespace Cryptid.Data
 
         [Tooltip("Terrain distribution thresholds (sorted ascending). " +
                  "4 values split noise [0,1] into 5 terrain bands.")]
-        [SerializeField] private float[] _terrainThresholds = { 0.22f, 0.42f, 0.62f, 0.78f };
+        [SerializeField] private float[] _terrainThresholds = { 0.20f, 0.38f, 0.56f, 0.72f };
 
         [Tooltip("Terrain type order for the 5 noise bands (low to high)")]
         [SerializeField] private TerrainType[] _terrainOrder =
