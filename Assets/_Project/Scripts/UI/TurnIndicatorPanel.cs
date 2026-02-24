@@ -100,12 +100,13 @@ namespace Cryptid.UI
         /// <summary>Converts TurnPhase enum to a human-readable string.</summary>
         private static string PhaseToString(TurnPhase phase) => phase switch
         {
-            TurnPhase.ChooseAction    => L.Get("phase_choose"),
-            TurnPhase.SelectTile      => L.Get("phase_select_tile"),
-            TurnPhase.WaitForResponse => L.Get("phase_waiting"),
-            TurnPhase.Search          => L.Get("phase_search"),
+            TurnPhase.ChooseAction     => L.Get("phase_choose"),
+            TurnPhase.SelectTile       => L.Get("phase_select_tile"),
+            TurnPhase.WaitForResponse  => L.Get("phase_waiting"),
+            TurnPhase.Search           => L.Get("phase_search"),
+            TurnPhase.SearchAnimating  => L.Get("phase_search_animating"),
             TurnPhase.PenaltyPlacement => L.Get("phase_penalty"),
-            TurnPhase.TurnEnd         => L.Get("phase_turn_end"),
+            TurnPhase.TurnEnd          => L.Get("phase_turn_end"),
             _ => phase.ToString()
         };
 

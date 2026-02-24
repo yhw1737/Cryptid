@@ -1,3 +1,5 @@
+using System.Collections;
+using System.Collections.Generic;
 using Cryptid.Core;
 using Cryptid.Data;
 using Cryptid.Network;
@@ -217,6 +219,7 @@ namespace Cryptid.Core
             _turnManager.OnSearchPerformed += HandleSearchPerformed;
             _turnManager.OnSearchDiscPlaced += HandleSearchDiscPlaced;
             _turnManager.OnSearchVerification += HandleSearchVerification;
+            _turnManager.OnSearchPrepared += HandleSearchPrepared;
             _turnManager.OnPenaltyCubePlaced += HandlePenaltyCubePlaced;
             _turnManager.OnGameWon += HandleGameWon;
 
@@ -317,6 +320,7 @@ namespace Cryptid.Core
         /// Validates tile interaction per spec 5.3.A:
         ///   1. Cube Blocker: no cubes on tile (permanently dead)
         ///   2. No Self-Stacking: player has no existing tokens on tile
+        ///      (for Questions, only cubes block — discs are allowed)
         ///   3. Discs are Stackable: other players' discs are OK (implicit)
         /// Shows UI feedback when validation fails.
         /// </summary>
@@ -332,7 +336,10 @@ namespace Cryptid.Core
                 return false;
             }
 
-            if (_tokenPlacer.HasPlayerToken(coords, playerIndex))
+            // For Questions (SelectTile), discs on the tile are fine.
+            // For Search and PenaltyPlacement, check full token presence.
+            bool isQuestion = _turnManager?.CurrentPhase == TurnPhase.SelectTile;
+            if (!isQuestion && _tokenPlacer.HasPlayerToken(coords, playerIndex))
             {
                 Debug.Log($"[GameBootstrapper] Player {playerIndex + 1} already has a token at {coords}.");
                 _uiManager?.LogPanel?.AddEntry(playerIndex,
@@ -394,6 +401,58 @@ namespace Cryptid.Core
             if (_tokenPlacer == null) return;
             TokenType type = result ? TokenType.Disc : TokenType.Cube;
             _tokenPlacer.PlaceTokenAt(tile, type, verifier);
+        }
+
+        /// <summary>
+        /// Handles prepared search verification data.
+        /// Starts a coroutine to animate each verification step with delays.
+        /// </summary>
+        private void HandleSearchPrepared(int searcherIndex, HexCoordinates tile,
+            List<SearchVerificationStep> steps)
+        {
+            StartCoroutine(AnimateSearchVerification(searcherIndex, tile, steps));
+        }
+
+        /// <summary>
+        /// Coroutine that reveals search verification results one by one with delays.
+        /// After all steps are shown, cleans up discs if search failed and finalizes.
+        /// </summary>
+        private IEnumerator AnimateSearchVerification(int searcherIndex, HexCoordinates tile,
+            List<SearchVerificationStep> steps)
+        {
+            const float stepDelay = 1.0f;
+            bool searchFailed = false;
+
+            // Initial pause after searcher disc placement
+            yield return new WaitForSeconds(stepDelay);
+
+            foreach (var step in steps)
+            {
+                // Fire events so UI log and token placement happen
+                AudioManager.Instance?.PlayTokenPlace();
+                _turnManager.FireSearchVerification(step.VerifierIndex, tile, step.Result);
+
+                if (!step.Result)
+                {
+                    searchFailed = true;
+                    // Brief pause to show the cube before cleanup
+                    yield return new WaitForSeconds(stepDelay * 0.5f);
+                    break;
+                }
+
+                yield return new WaitForSeconds(stepDelay);
+            }
+
+            // If search failed, remove all discs from the tile (cubes stay)
+            if (searchFailed && _tokenPlacer != null)
+            {
+                _tokenPlacer.RemoveDiscsAt(tile);
+            }
+
+            yield return new WaitForSeconds(stepDelay * 0.5f);
+
+            // Finalize: transition to penalty or win
+            _turnManager.FinalizeSearch(tile, !searchFailed);
         }
 
         /// <summary>
@@ -544,6 +603,12 @@ namespace Cryptid.Core
                     ApplyPenaltyDimming(playerIndex);
                     break;
 
+                case TurnPhase.SearchAnimating:
+                    // Pause timer during search animation
+                    _turnTimer.Stop();
+                    _uiManager?.TurnIndicator?.HideTimer();
+                    break;
+
                 default:
                     _turnTimer.Stop();
                     _uiManager?.TurnIndicator?.HideTimer();
@@ -622,7 +687,8 @@ namespace Cryptid.Core
         // ---------------------------------------------------------
 
         /// <summary>
-        /// Dims all tiles that cannot receive a penalty cube during PenaltyPlacement.
+        /// Dims invalid tiles and highlights valid tiles with outline ring
+        /// during PenaltyPlacement phase.
         /// Valid penalty tiles: clue does NOT match AND no cube AND no player token.
         /// </summary>
         private void ApplyPenaltyDimming(int playerIndex)
@@ -644,6 +710,7 @@ namespace Cryptid.Core
                 // A tile is invalid for penalty if: clue matches it, has cube, or has player token
                 bool isInvalid = clueMatches || hasCube || hasToken;
                 hexTile.SetDimmed(isInvalid);
+                hexTile.SetPenaltyHighlight(!isInvalid);
 
                 if (!isInvalid) hasAnyValid = true;
             }
@@ -657,7 +724,7 @@ namespace Cryptid.Core
             }
         }
 
-        /// <summary>Clears dimming from all tiles.</summary>
+        /// <summary>Clears dimming and penalty highlights from all tiles.</summary>
         private void ClearTileDimming()
         {
             if (_mapGenerator?.WorldMap == null) return;
@@ -665,7 +732,9 @@ namespace Cryptid.Core
             foreach (var kvp in _mapGenerator.WorldMap)
             {
                 var hexTile = FindHexTile(kvp.Key);
-                hexTile?.SetDimmed(false);
+                if (hexTile == null) continue;
+                hexTile.SetDimmed(false);
+                hexTile.SetPenaltyHighlight(false);
             }
         }
 

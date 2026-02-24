@@ -9,8 +9,9 @@ namespace Cryptid.Systems.Map
     /// Stores runtime data (coordinates, terrain, etc.) and handles
     /// visual state changes (highlight, select, outline).
     /// 
-    /// Hover shows a white outline ring around the tile.
-    /// Selection shows a green outline ring plus a floating inverted pyramid.
+    /// Hover brightens the tile color (tint).
+    /// Selection shows a floating inverted pyramid indicator.
+    /// Penalty placement shows a green outline ring on valid tiles.
     /// 
     /// Created by MapGenerator during tile spawning.
     /// </summary>
@@ -37,6 +38,10 @@ namespace Cryptid.Systems.Map
         private bool _isHighlighted;
         private bool _isSelected;
         private bool _isDimmed;
+        private bool _isPenaltyHighlighted;
+
+        // Highlight tint factor for hover
+        private const float HIGHLIGHT_TINT = 1.4f;
 
         // Selection indicator: floating green inverted pyramid
         private GameObject _selectIndicator;
@@ -47,12 +52,11 @@ namespace Cryptid.Systems.Map
         private const float INDICATOR_SCALE = 0.3f;
         private const float INDICATOR_ROTATE_SPEED = 30f;
 
-        // Outline ring rendered around the tile edge
+        // Outline ring rendered around the tile edge (penalty placement only)
         private GameObject _outlineRing;
         private MeshRenderer _outlineRenderer;
         private Material _outlineMaterial;
-        private static readonly Color OutlineHoverColor  = new Color(1f, 1f, 1f, 0.85f);
-        private static readonly Color OutlineSelectColor = new Color(0.2f, 0.9f, 0.3f, 0.9f);
+        private static readonly Color OutlinePenaltyColor = new Color(0.2f, 0.9f, 0.3f, 0.9f);
         private const float OUTLINE_Y_OFFSET = 0.05f;
         private const float OUTLINE_OUTER_SCALE = 1.08f;
         private const float OUTLINE_INNER_SCALE = 0.92f;
@@ -87,7 +91,7 @@ namespace Cryptid.Systems.Map
 
         /// <summary>
         /// Highlights this tile (mouse hover).
-        /// Shows a white outline ring around the tile edge.
+        /// Brightens the tile color by a tint factor.
         /// </summary>
         public void SetHighlight(bool highlighted)
         {
@@ -98,7 +102,7 @@ namespace Cryptid.Systems.Map
 
         /// <summary>
         /// Selects this tile (mouse click).
-        /// Shows a green outline ring and a floating inverted pyramid indicator.
+        /// Shows a floating inverted pyramid indicator above the tile.
         /// </summary>
         public void SetSelected(bool selected)
         {
@@ -110,6 +114,17 @@ namespace Cryptid.Systems.Map
             else
                 DestroyIndicator();
 
+            UpdateVisual();
+        }
+
+        /// <summary>
+        /// Shows a green outline ring on this tile to indicate it is a
+        /// valid penalty cube placement target. Used only during PenaltyPlacement phase.
+        /// </summary>
+        public void SetPenaltyHighlight(bool active)
+        {
+            if (_isPenaltyHighlighted == active) return;
+            _isPenaltyHighlighted = active;
             UpdateVisual();
         }
 
@@ -275,22 +290,24 @@ namespace Cryptid.Systems.Map
         {
             if (_baseMaterial == null) return;
 
-            // Outline ring visibility and colour
+            // Outline ring: only shown for penalty highlight
             if (_outlineRing != null)
             {
-                bool showOutline = _isHighlighted || _isSelected;
-                _outlineRing.SetActive(showOutline);
-                if (showOutline && _outlineMaterial != null)
+                _outlineRing.SetActive(_isPenaltyHighlighted);
+                if (_isPenaltyHighlighted && _outlineMaterial != null)
                 {
-                    _outlineMaterial.color = _isSelected
-                        ? OutlineSelectColor : OutlineHoverColor;
+                    _outlineMaterial.color = OutlinePenaltyColor;
                 }
             }
 
-            // Tile colour
+            // Tile colour: dimmed, highlighted (tint), or base
             if (_isDimmed)
             {
                 _baseMaterial.color = _baseColor * DIM_FACTOR;
+            }
+            else if (_isHighlighted)
+            {
+                _baseMaterial.color = _baseColor * HIGHLIGHT_TINT;
             }
             else
             {
@@ -306,6 +323,7 @@ namespace Cryptid.Systems.Map
             _isHighlighted = false;
             _isSelected = false;
             _isDimmed = false;
+            _isPenaltyHighlighted = false;
             DestroyIndicator();
             if (_outlineRing != null) _outlineRing.SetActive(false);
             if (_baseMaterial != null) _baseMaterial.color = _baseColor;

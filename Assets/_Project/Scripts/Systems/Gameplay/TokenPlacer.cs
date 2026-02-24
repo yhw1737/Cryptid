@@ -51,12 +51,12 @@ namespace Cryptid.Systems.Gameplay
     public class TokenPlacer : MonoBehaviour
     {
         [Header("Token Dimensions")]
-        [Tooltip("Size of cube tokens")]
-        [SerializeField] private Vector3 _cubeSize = new Vector3(0.25f, 0.25f, 0.25f);
+        [Tooltip("Size of cube tokens (0.8x original, flattened)")]
+        [SerializeField] private Vector3 _cubeSize = new Vector3(0.20f, 0.12f, 0.20f);
 
-        [Tooltip("Disc radius and height")]
-        [SerializeField] private float _discRadius = 0.2f;
-        [SerializeField] private float _discHeight = 0.08f;
+        [Tooltip("Disc radius and height (0.8x original, flattened)")]
+        [SerializeField] private float _discRadius = 0.16f;
+        [SerializeField] private float _discHeight = 0.05f;
 
         [Header("Player Colors")]
         [SerializeField] private Color[] _playerColors = new Color[]
@@ -83,10 +83,10 @@ namespace Cryptid.Systems.Gameplay
 
         [Header("Layout")]
         [Tooltip("Vertical offset above the tile surface")]
-        [SerializeField] private float _baseYOffset = 0.15f;
+        [SerializeField] private float _baseYOffset = 0.10f;
 
         [Tooltip("Stack offset when multiple tokens on same tile")]
-        [SerializeField] private float _stackOffset = 0.3f;
+        [SerializeField] private float _stackOffset = 0.15f;
 
         // ---------------------------------------------------------
         // Runtime State
@@ -238,6 +238,26 @@ namespace Cryptid.Systems.Gameplay
         }
 
         /// <summary>
+        /// Removes all discs from a specific tile, keeping cubes intact.
+        /// Used when a search fails: cubes (denial) stay, discs (confirmation) are removed.
+        /// </summary>
+        public void RemoveDiscsAt(HexCoordinates coords)
+        {
+            if (!_tokensByTile.TryGetValue(coords, out var list)) return;
+
+            var discs = list.FindAll(t => t.Type == TokenType.Disc);
+            foreach (var disc in discs)
+            {
+                if (disc.Visual != null)
+                    AnimateRemoval(disc.Visual);
+                _allTokens.Remove(disc);
+                list.Remove(disc);
+            }
+
+            Debug.Log($"[TokenPlacer] Removed {discs.Count} disc(s) from {coords}.");
+        }
+
+        /// <summary>
         /// Removes all tokens from the board.
         /// </summary>
         [ContextMenu("Clear All Tokens")]
@@ -296,6 +316,20 @@ namespace Cryptid.Systems.Gameplay
             foreach (var token in list)
             {
                 if (token.PlayerIndex == playerIndex) return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Returns true if the specified player has a cube specifically on this tile.
+        /// Used for search/penalty validation where discs should not block.
+        /// </summary>
+        public bool HasPlayerCube(HexCoordinates coords, int playerIndex)
+        {
+            if (!_tokensByTile.TryGetValue(coords, out var list)) return false;
+            foreach (var token in list)
+            {
+                if (token.PlayerIndex == playerIndex && token.Type == TokenType.Cube) return true;
             }
             return false;
         }

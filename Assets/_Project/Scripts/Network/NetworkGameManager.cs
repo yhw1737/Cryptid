@@ -59,6 +59,7 @@ namespace Cryptid.Network
             public const byte TimerSync      = 15;
             public const byte TimerStop      = 16;
             public const byte ChatMessage    = 17;
+            public const byte RemoveDiscs    = 18;
 
             // Client → Host
             public const byte ChooseAction    = 50;
@@ -622,6 +623,7 @@ namespace Cryptid.Network
             _turnManager.OnSearchDiscPlaced += OnHost_SearchDiscPlaced;
             _turnManager.OnSearchVerification += OnHost_SearchVerification;
             _turnManager.OnSearchPerformed += OnHost_SearchPerformed;
+            _turnManager.OnSearchPrepared += OnHost_SearchPrepared;
             _turnManager.OnPenaltyCubePlaced += OnHost_PenaltyCubePlaced;
             _turnManager.OnGameWon += OnHost_GameWon;
         }
@@ -768,6 +770,55 @@ namespace Cryptid.Network
             });
         }
 
+        /// <summary>
+        /// Handles prepared search data on host. Starts animated reveal coroutine.
+        /// Each verification step is revealed with a delay, then broadcasts to clients.
+        /// </summary>
+        private void OnHost_SearchPrepared(int searcherIndex, HexCoordinates tile,
+            System.Collections.Generic.List<SearchVerificationStep> steps)
+        {
+            StartCoroutine(AnimateNetworkSearchVerification(searcherIndex, tile, steps));
+        }
+
+        private System.Collections.IEnumerator AnimateNetworkSearchVerification(
+            int searcherIndex, HexCoordinates tile,
+            System.Collections.Generic.List<SearchVerificationStep> steps)
+        {
+            const float stepDelay = 1.0f;
+            bool searchFailed = false;
+
+            yield return new UnityEngine.WaitForSeconds(stepDelay);
+
+            foreach (var step in steps)
+            {
+                // FireSearchVerification triggers OnHost_SearchVerification
+                // which places token locally and broadcasts to clients
+                _turnManager.FireSearchVerification(step.VerifierIndex, tile, step.Result);
+
+                if (!step.Result)
+                {
+                    searchFailed = true;
+                    yield return new UnityEngine.WaitForSeconds(stepDelay * 0.5f);
+                    break;
+                }
+
+                yield return new UnityEngine.WaitForSeconds(stepDelay);
+            }
+
+            // Remove discs on search failure
+            if (searchFailed && _tokenPlacer != null)
+            {
+                _tokenPlacer.RemoveDiscsAt(tile);
+                // Broadcast disc removal to clients
+                SendToAllClients(NetMsg.RemoveDiscs, w => WriteCoords(w, tile));
+            }
+
+            yield return new UnityEngine.WaitForSeconds(stepDelay * 0.5f);
+
+            // FinalizeSearch triggers OnHost_SearchPerformed which broadcasts
+            _turnManager.FinalizeSearch(tile, !searchFailed);
+        }
+
         private void OnHost_PenaltyCubePlaced(int player, HexCoordinates tile)
         {
             _tokenPlacer?.PlaceTokenAt(tile, TokenType.Cube, player);
@@ -843,7 +894,16 @@ namespace Cryptid.Network
         private bool ValidateTileInteraction(HexCoordinates coords, int playerIndex)
         {
             if (_tokenPlacer == null) return true;
-            return _tokenPlacer.CanInteract(coords, playerIndex);
+
+            // Cubes always block
+            if (_tokenPlacer.HasAnyCube(coords)) return false;
+
+            // For Questions (SelectTile), discs are allowed — only cubes block
+            bool isQuestion = _turnManager?.CurrentPhase == TurnPhase.SelectTile;
+            if (!isQuestion && _tokenPlacer.HasPlayerToken(coords, playerIndex))
+                return false;
+
+            return true;
         }
 
         // =============================================================
@@ -983,6 +1043,7 @@ namespace Cryptid.Network
                 _turnManager.OnSearchDiscPlaced  -= OnHost_SearchDiscPlaced;
                 _turnManager.OnSearchVerification -= OnHost_SearchVerification;
                 _turnManager.OnSearchPerformed   -= OnHost_SearchPerformed;
+                _turnManager.OnSearchPrepared    -= OnHost_SearchPrepared;
                 _turnManager.OnPenaltyCubePlaced -= OnHost_PenaltyCubePlaced;
                 _turnManager.OnGameWon           -= OnHost_GameWon;
                 _turnManager = null;
@@ -1210,6 +1271,7 @@ namespace Cryptid.Network
                 case NetMsg.TimerSync:       Handle_TimerSync(reader); break;
                 case NetMsg.TimerStop:       Handle_TimerStop(reader); break;
                 case NetMsg.ChatMessage:     Handle_ChatMessage(reader); break;
+                case NetMsg.RemoveDiscs:     Handle_RemoveDiscs(reader); break;
 
                 // Client → Host messages
                 case NetMsg.ChooseAction:     Handle_ChooseAction(senderId, reader); break;
@@ -1344,6 +1406,12 @@ namespace Cryptid.Network
             reader.ReadValueSafe(out bool correct);
 
             OnSearchPerformed?.Invoke(player, tile, correct);
+        }
+
+        private void Handle_RemoveDiscs(FastBufferReader reader)
+        {
+            var tile = ReadCoords(reader);
+            _tokenPlacer?.RemoveDiscsAt(tile);
         }
 
         private void Handle_PenaltyResult(FastBufferReader reader)

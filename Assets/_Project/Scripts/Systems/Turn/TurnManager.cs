@@ -31,6 +31,11 @@ namespace Cryptid.Systems.Turn
         /// The searcher must place a cube on a tile where their own clue does NOT match.
         /// </summary>
         PenaltyPlacement = 5,
+
+        /// <summary>
+        /// Search animation is in progress. Blocks all input.
+        /// </summary>
+        SearchAnimating = 6,
     }
 
     /// <summary>
@@ -43,6 +48,18 @@ namespace Cryptid.Systems.Turn
 
         /// <summary> Search a tile to attempt to find the Cryptid. </summary>
         Search = 1,
+    }
+
+    /// <summary>
+    /// Data for a single clockwise verification step during Search.
+    /// </summary>
+    public struct SearchVerificationStep
+    {
+        /// <summary> 0-based index of the verifying player. </summary>
+        public int VerifierIndex;
+
+        /// <summary> True = clue matches (disc), False = clue doesn't match (cube). </summary>
+        public bool Result;
     }
 
     /// <summary>
@@ -125,6 +142,13 @@ namespace Cryptid.Systems.Turn
         /// where their OWN clue does NOT match.
         /// </summary>
         public event Action<int, HexCoordinates> OnPenaltyCubePlaced;
+
+        /// <summary>
+        /// Fired when search verification data is prepared for animated display.
+        /// Args: (searcherIndex, tileCoords, verificationSteps).
+        /// GameBootstrapper uses this to run a coroutine revealing each step.
+        /// </summary>
+        public event Action<int, HexCoordinates, List<SearchVerificationStep>> OnSearchPrepared;
 
         /// <summary> Fired when a player wins. Arg: winnerIndex. </summary>
         public event Action<int> OnGameWon;
@@ -269,6 +293,9 @@ namespace Cryptid.Systems.Turn
         ///      - NO  → verifier places cube, search STOPS.
         ///   3. All YES → searcher wins!
         ///   4. Any NO  → searcher must place penalty cube on a non-matching tile.
+        /// 
+        /// This method prepares all verification data and fires OnSearchPrepared
+        /// so that GameBootstrapper can animate the reveal step by step.
         /// </summary>
         public void SubmitSearch(HexCoordinates tileCoords,
             IReadOnlyDictionary<HexCoordinates, WorldTile> worldMap)
@@ -289,7 +316,8 @@ namespace Cryptid.Systems.Turn
             Debug.Log($"[TurnManager] Player {_currentPlayerIndex + 1} searches tile {tileCoords}.");
             OnSearchDiscPlaced?.Invoke(_currentPlayerIndex, tileCoords);
 
-            // Step 2: Clockwise verification by other players
+            // Step 2: Prepare clockwise verification results (computed instantly)
+            var steps = new List<SearchVerificationStep>();
             for (int i = 1; i < _playerCount; i++)
             {
                 int verifier = (_currentPlayerIndex + i) % _playerCount;
@@ -300,25 +328,52 @@ namespace Cryptid.Systems.Turn
                 Debug.Log($"[TurnManager] Verification: Player {verifier + 1} says {verdict} " +
                          $"(Clue: {clue.Description})");
 
-                // Fire event so tokens are placed
-                OnSearchVerification?.Invoke(verifier, tileCoords, result);
-
-                if (!result)
+                steps.Add(new SearchVerificationStep
                 {
-                    // Search denied by this verifier
-                    Debug.Log($"[TurnManager] Search DENIED by Player {verifier + 1}. " +
-                             $"Player {_currentPlayerIndex + 1} must place penalty cube.");
-                    OnSearchPerformed?.Invoke(_currentPlayerIndex, tileCoords, false);
-                    SetPhase(TurnPhase.PenaltyPlacement);
-                    return;
-                }
+                    VerifierIndex = verifier,
+                    Result = result
+                });
+
+                // Stop computing after first denial
+                if (!result) break;
             }
 
-            // Step 3: All players confirmed — searcher wins!
-            Debug.Log($"[TurnManager] All players confirmed! " +
-                     $"Player {_currentPlayerIndex + 1} found the Cryptid at {tileCoords}!");
-            OnSearchPerformed?.Invoke(_currentPlayerIndex, tileCoords, true);
-            OnGameWon?.Invoke(_currentPlayerIndex);
+            // Transition to animating phase (blocks input)
+            SetPhase(TurnPhase.SearchAnimating);
+
+            // Fire prepared event — GameBootstrapper will animate step by step
+            OnSearchPrepared?.Invoke(_currentPlayerIndex, tileCoords, steps);
+        }
+
+        /// <summary>
+        /// Fires the OnSearchVerification event for a single verification step.
+        /// Called by GameBootstrapper during animated search reveal.
+        /// </summary>
+        public void FireSearchVerification(int verifier, HexCoordinates tile, bool result)
+        {
+            OnSearchVerification?.Invoke(verifier, tile, result);
+        }
+
+        /// <summary>
+        /// Finalizes the search after all verification steps have been animated.
+        /// Transitions to PenaltyPlacement (fail) or fires OnGameWon (success).
+        /// </summary>
+        public void FinalizeSearch(HexCoordinates tile, bool isCorrect)
+        {
+            if (isCorrect)
+            {
+                Debug.Log($"[TurnManager] All players confirmed! " +
+                         $"Player {_currentPlayerIndex + 1} found the Cryptid at {tile}!");
+                OnSearchPerformed?.Invoke(_currentPlayerIndex, tile, true);
+                OnGameWon?.Invoke(_currentPlayerIndex);
+            }
+            else
+            {
+                Debug.Log($"[TurnManager] Search DENIED. " +
+                         $"Player {_currentPlayerIndex + 1} must place penalty cube.");
+                OnSearchPerformed?.Invoke(_currentPlayerIndex, tile, false);
+                SetPhase(TurnPhase.PenaltyPlacement);
+            }
         }
 
         /// <summary>

@@ -368,7 +368,7 @@ namespace Cryptid.Systems.Map
                             Vector2 offset = RandomPointInHex(rng, HexMetrics.InnerRadius * 0.6f);
                             Vector3 decoPos = worldPos + new Vector3(offset.x, baseY, offset.y);
                             float yRot = (float)(rng.NextDouble() * 360.0);
-                            float scale = 0.3f + (float)(rng.NextDouble() * 0.15f);
+                            float scale = 0.24f + (float)(rng.NextDouble() * 0.12f);
 
                             GameObject deco = Instantiate(decoPrefab, decoPos,
                                 Quaternion.Euler(0f, yRot, 0f), hexObj.transform);
