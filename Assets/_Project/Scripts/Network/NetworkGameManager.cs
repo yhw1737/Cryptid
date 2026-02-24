@@ -56,6 +56,9 @@ namespace Cryptid.Network
             public const byte PenaltyResult   = 12;
             public const byte LobbyUpdate    = 13;
             public const byte PlayerNames    = 14;
+            public const byte TimerSync      = 15;
+            public const byte TimerStop      = 16;
+            public const byte ChatMessage    = 17;
 
             // Client → Host
             public const byte ChooseAction    = 50;
@@ -65,6 +68,7 @@ namespace Cryptid.Network
             public const byte RequestStart    = 54;
             public const byte SetNickname    = 55;
             public const byte ToggleReady    = 56;
+            public const byte SendChat       = 57;
         }
 
         // =============================================================
@@ -101,6 +105,7 @@ namespace Cryptid.Network
         private readonly Dictionary<ulong, int> _clientPlayerMap = new();
         private readonly Dictionary<ulong, string> _playerNicknames = new();
         private readonly Dictionary<ulong, bool> _playerReady = new();
+        private readonly HashSet<int> _disconnectedPlayers = new();
         private string[] _playerNames;
 
         // =============================================================
@@ -111,6 +116,7 @@ namespace Cryptid.Network
         private TokenPlacer _tokenPlacer;
         private GameUIManager _uiManager;
         private TileInteractionSystem _tileInteraction;
+        private TurnTimer _turnTimer; // Host-side timer for network sync
 
         // =============================================================
         // ITurnState Implementation
@@ -191,6 +197,10 @@ namespace Cryptid.Network
             {
                 _uiManager.OnActionChosen += HandleUIAction;
                 _uiManager.OnRestartRequested += HandleRestart;
+
+                // Subscribe to chat input
+                if (_uiManager.LogPanel != null)
+                    _uiManager.LogPanel.OnChatMessageSent += SendChatMessage;
             }
 
             // Register custom message handler
@@ -210,6 +220,9 @@ namespace Cryptid.Network
                 // Listen for client connections
                 NetworkManager.Singleton.OnClientConnectedCallback += HandleClientConnected;
                 NetworkManager.Singleton.OnClientDisconnectCallback += HandleClientDisconnected;
+
+                // Show host in lobby immediately
+                BroadcastLobbyUpdate();
 
                 Debug.Log("[NetworkGameManager] Initialized as HOST (Player 1)");
             }
@@ -273,6 +286,18 @@ namespace Cryptid.Network
             OnPlayerCountChanged?.Invoke(_clientPlayerMap.Count);
             BroadcastLobbyUpdate();
 
+            // Log connection event
+            string connectName = $"Player {playerIndex + 1}";
+            _uiManager?.LogPanel?.AddSystemMessage(L.Format("player_connected", connectName));
+
+            // Broadcast connect event to all clients
+            SendToAllClients(NetMsg.ChatMessage, w =>
+            {
+                w.WriteValueSafe(-1); // system message
+                WriteString(w, L.Format("player_connected", connectName));
+                WriteString(w, "");
+            });
+
             Debug.Log($"[NetworkGameManager] Client {clientId} → Player {playerIndex + 1} " +
                       $"({_clientPlayerMap.Count} players total)");
         }
@@ -281,16 +306,89 @@ namespace Cryptid.Network
         {
             if (!_isHost) return;
 
-            if (_clientPlayerMap.Remove(clientId))
+            if (_clientPlayerMap.TryGetValue(clientId, out int playerIndex))
             {
+                string disconnectName = _playerNicknames.TryGetValue(clientId, out var dn)
+                    ? dn : $"Player {playerIndex + 1}";
+                _clientPlayerMap.Remove(clientId);
                 _playerNicknames.Remove(clientId);
                 _playerReady.Remove(clientId);
                 OnPlayerCountChanged?.Invoke(_clientPlayerMap.Count);
-                BroadcastLobbyUpdate();
+
+                if (_gamePhase == GamePhase.Playing)
+                {
+                    // Mid-game disconnect: mark player as disconnected, skip their turns
+                    _disconnectedPlayers.Add(playerIndex);
+                    string name = _playerNames != null && playerIndex < _playerNames.Length
+                        ? _playerNames[playerIndex]
+                        : L.Format("player_default", playerIndex + 1);
+                    Debug.Log($"[NetworkGameManager] Player {playerIndex + 1} ({name}) " +
+                              $"disconnected mid-game. Will skip their turns.");
+
+                    // If it was the disconnected player's turn, skip to next
+                    if (_turnManager != null && _turnManager.CurrentPlayerIndex == playerIndex)
+                    {
+                        _turnManager.SkipTurn();
+                        // Keep skipping until we find a connected player
+                        SkipDisconnectedPlayers();
+                    }
+
+                    // Check if only one player remains
+                    int activePlayers = _playerCount - _disconnectedPlayers.Count;
+                    if (activePlayers <= 1)
+                    {
+                        // Find the remaining player and declare them the winner
+                        for (int i = 0; i < _playerCount; i++)
+                        {
+                            if (!_disconnectedPlayers.Contains(i))
+                            {
+                                OnHost_GameWon(i);
+                                return;
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    BroadcastLobbyUpdate();
+                }
+
+                // Log disconnect event
+                _uiManager?.LogPanel?.AddSystemMessage(L.Format("player_disconnected", disconnectName));
+
+                // Broadcast disconnect event to remaining clients
+                SendToAllClients(NetMsg.ChatMessage, w =>
+                {
+                    w.WriteValueSafe(-1); // system message
+                    WriteString(w, L.Format("player_disconnected", disconnectName));
+                    WriteString(w, "");
+                });
+
                 Debug.Log($"[NetworkGameManager] Client {clientId} disconnected " +
                           $"({_clientPlayerMap.Count} players remain)");
             }
         }
+
+        /// <summary>
+        /// Checks if the current turn player is disconnected and skips forward.
+        /// Called after a disconnect or after turn advance.
+        /// </summary>
+        private void SkipDisconnectedPlayers()
+        {
+            if (_turnManager == null) return;
+
+            int safetyCount = 0;
+            while (_disconnectedPlayers.Contains(_turnManager.CurrentPlayerIndex)
+                   && safetyCount < _playerCount)
+            {
+                _turnManager.SkipTurn();
+                safetyCount++;
+            }
+        }
+
+        /// <summary>Whether a given player index is disconnected.</summary>
+        public bool IsPlayerDisconnected(int playerIndex) =>
+            _disconnectedPlayers.Contains(playerIndex);
 
         // =============================================================
         // Host: Game Flow
@@ -390,6 +488,9 @@ namespace Cryptid.Network
                 _uiManager.HumanPlayerIndex = _localPlayerIndex;
                 _uiManager.BindNetworkGameplay(this, _playerCount);
             }
+
+            // Initialize host timer for sync
+            InitializeHostTimer();
 
             // Transition to Playing
             _gamePhase = GamePhase.Playing;
@@ -523,6 +624,13 @@ namespace Cryptid.Network
 
         private void OnHost_TurnStarted(int playerIndex)
         {
+            // Skip disconnected players
+            if (_disconnectedPlayers.Contains(playerIndex))
+            {
+                SkipDisconnectedPlayers();
+                return;
+            }
+
             _currentPlayerIndex = playerIndex;
             _turnNumber = _turnManager.TurnNumber;
             _currentPhase = _turnManager.CurrentPhase;
@@ -541,6 +649,9 @@ namespace Cryptid.Network
         {
             _currentPhase = phase;
 
+            // Clear dimming from previous phase
+            ClearTileDimming();
+
             OnPhaseChanged?.Invoke(playerIndex, phase);
 
             SendToAllClients(NetMsg.PhaseChanged, w =>
@@ -548,6 +659,32 @@ namespace Cryptid.Network
                 w.WriteValueSafe(playerIndex);
                 w.WriteValueSafe((byte)phase);
             });
+
+            // Timer management (host-side)
+            if (_turnTimer != null)
+            {
+                switch (phase)
+                {
+                    case TurnPhase.ChooseAction:
+                    case TurnPhase.SelectTile:
+                    case TurnPhase.Search:
+                        _turnTimer.StartTurnTimer();
+                        BroadcastTimerStart(TurnTimer.TurnDuration);
+                        break;
+
+                    case TurnPhase.PenaltyPlacement:
+                        _turnTimer.StartPenaltyTimer();
+                        BroadcastTimerStart(TurnTimer.PenaltyDuration);
+                        ApplyPenaltyDimming(playerIndex);
+                        break;
+
+                    default:
+                        _turnTimer.Stop();
+                        BroadcastTimerStop();
+                        _uiManager?.TurnIndicator?.HideTimer();
+                        break;
+                }
+            }
         }
 
         private void OnHost_QuestionAsked(int asking, int target, HexCoordinates tile)
@@ -694,7 +831,7 @@ namespace Cryptid.Network
             {
                 SendToClient(senderClientId, NetMsg.ShowError, w =>
                 {
-                    WriteString(w, "That tile matches your clue! Choose a different tile.");
+                    WriteString(w, L.Get("warn_matches_clue"));
                 });
             }
         }
@@ -763,12 +900,280 @@ namespace Cryptid.Network
 
         private void HandleRestart()
         {
-            // Simple restart: shutdown network and reload scene
-            if (NetworkManager.Singleton != null)
-                NetworkManager.Singleton.Shutdown();
-            GameService.ClearAll();
-            UnityEngine.SceneManagement.SceneManager.LoadScene(
-                UnityEngine.SceneManagement.SceneManager.GetActiveScene().buildIndex);
+            if (_isHost)
+            {
+                ReturnToLobby();
+            }
+            else
+            {
+                // Client requests restart from host
+                SendToHost(NetMsg.RequestStart, w => { });
+            }
+        }
+
+        // =============================================================
+        // Return to Lobby (preserves connections)
+        // =============================================================
+
+        /// <summary>
+        /// Resets the game state and returns all players to the lobby.
+        /// Host keeps the room alive; all clients remain connected.
+        /// </summary>
+        public void ReturnToLobby()
+        {
+            if (!_isHost) return;
+
+            // 1. Clean up host game state
+            CleanupGameState();
+
+            // 2. Reset lobby ready states
+            var keys = new List<ulong>(_playerReady.Keys);
+            foreach (var key in keys)
+                _playerReady[key] = false;
+            _disconnectedPlayers.Clear();
+
+            // 3. Transition to Lobby phase
+            _gamePhase = GamePhase.Lobby;
+            OnGamePhaseChanged?.Invoke(_gamePhase);
+
+            // 4. Broadcast lobby return to all clients
+            SendToAllClients(NetMsg.GamePhaseChanged, w =>
+            {
+                w.WriteValueSafe((byte)GamePhase.Lobby);
+            });
+
+            // 5. Update lobby display
+            BroadcastLobbyUpdate();
+
+            // 6. Show lobby UI on host
+            var connectionMgr = FindFirstObjectByType<ConnectionManager>();
+            connectionMgr?.ShowLobbyAfterGame();
+
+            Debug.Log("[NetworkGameManager] Returned to lobby. Connections preserved.");
+        }
+
+        /// <summary>
+        /// Cleans up all game-specific state (tokens, map visuals, turn manager).
+        /// Preserves network connections and player assignments.
+        /// </summary>
+        private void CleanupGameState()
+        {
+            // Stop timer
+            if (_turnTimer != null)
+            {
+                _turnTimer.Stop();
+                Destroy(_turnTimer);
+                _turnTimer = null;
+            }
+
+            // Clear tile dimming
+            ClearTileDimming();
+
+            // Unsubscribe turn events
+            if (_turnManager != null)
+            {
+                _turnManager.OnTurnStarted      -= OnHost_TurnStarted;
+                _turnManager.OnPhaseChanged      -= OnHost_PhaseChanged;
+                _turnManager.OnQuestionAsked     -= OnHost_QuestionAsked;
+                _turnManager.OnResponseGiven     -= OnHost_ResponseGiven;
+                _turnManager.OnSearchDiscPlaced  -= OnHost_SearchDiscPlaced;
+                _turnManager.OnSearchVerification -= OnHost_SearchVerification;
+                _turnManager.OnSearchPerformed   -= OnHost_SearchPerformed;
+                _turnManager.OnPenaltyCubePlaced -= OnHost_PenaltyCubePlaced;
+                _turnManager.OnGameWon           -= OnHost_GameWon;
+                _turnManager = null;
+            }
+
+            // Clear tokens
+            _tokenPlacer?.ClearAllTokens();
+
+            // Clear map visuals (keep the generator for re-generation)
+            _mapGenerator?.ClearVisuals();
+
+            // Clear puzzle
+            _puzzle = null;
+            _myClueDescription = null;
+            _playerNames = null;
+
+            // Reset turn state
+            _currentPlayerIndex = 0;
+            _turnNumber = 0;
+            _currentPhase = TurnPhase.ChooseAction;
+
+            // Reset UI
+            _uiManager?.ShowLobbyStatePublic();
+        }
+
+        /// <summary>
+        /// Client-side cleanup when returning to lobby.
+        /// </summary>
+        private void CleanupClientGameState()
+        {
+            // Stop client timer
+            if (_turnTimer != null)
+            {
+                _turnTimer.Stop();
+                Destroy(_turnTimer);
+                _turnTimer = null;
+            }
+
+            ClearTileDimming();
+            _tokenPlacer?.ClearAllTokens();
+            _mapGenerator?.ClearVisuals();
+            _myClueDescription = null;
+            _playerNames = null;
+            _currentPlayerIndex = 0;
+            _turnNumber = 0;
+            _currentPhase = TurnPhase.ChooseAction;
+            _uiManager?.ShowLobbyStatePublic();
+        }
+
+        // =============================================================
+        // Host: Timer & Penalty Dimming
+        // =============================================================
+
+        /// <summary>Initializes the turn timer on the host. Called after StartGame.</summary>
+        private void InitializeHostTimer()
+        {
+            _turnTimer = gameObject.AddComponent<TurnTimer>();
+            _turnTimer.OnTimerTick += OnHost_TimerTick;
+            _turnTimer.OnTimerExpired += OnHost_TimerExpired;
+        }
+
+        private void OnHost_TimerTick(float remaining)
+        {
+            _uiManager?.TurnIndicator?.UpdateTimer(remaining);
+        }
+
+        private void OnHost_TimerExpired()
+        {
+            if (_turnManager == null) return;
+
+            var phase = _turnManager.CurrentPhase;
+            int player = _turnManager.CurrentPlayerIndex;
+
+            _uiManager?.TurnIndicator?.HideTimer();
+            BroadcastTimerStop();
+
+            if (phase == TurnPhase.PenaltyPlacement)
+            {
+                AutoPlacePenaltyCube(player);
+            }
+            else
+            {
+                _uiManager?.LogPanel?.AddEntry(player, L.Get("timer_expired"));
+                _turnManager.SkipTurn();
+            }
+        }
+
+        private void AutoPlacePenaltyCube(int playerIndex)
+        {
+            if (_puzzle == null || _mapGenerator?.WorldMap == null) return;
+
+            var clue = _puzzle.PlayerClues[playerIndex];
+            foreach (var kvp in _mapGenerator.WorldMap)
+            {
+                if (_tokenPlacer != null &&
+                    (_tokenPlacer.HasAnyCube(kvp.Key) || _tokenPlacer.HasPlayerToken(kvp.Key, playerIndex)))
+                    continue;
+
+                if (!clue.Check(kvp.Value, _mapGenerator.WorldMap))
+                {
+                    _uiManager?.LogPanel?.AddEntry(playerIndex, L.Get("timer_auto_penalty"));
+                    ClearTileDimming();
+                    _turnManager.SubmitPenaltyCube(kvp.Key, _mapGenerator.WorldMap);
+                    return;
+                }
+            }
+
+            // No valid tile — skip turn
+            _uiManager?.LogPanel?.AddEntry(playerIndex, L.Get("timer_auto_penalty"));
+            ClearTileDimming();
+            _turnManager.SkipTurn();
+        }
+
+        private void BroadcastTimerStart(float duration)
+        {
+            SendToAllClients(NetMsg.TimerSync, w =>
+            {
+                w.WriteValueSafe(duration);
+            });
+        }
+
+        private void BroadcastTimerStop()
+        {
+            SendToAllClients(NetMsg.TimerStop, w => { });
+        }
+
+        // ---------------------------------------------------------
+        // Penalty Tile Dimming (both host and client)
+        // ---------------------------------------------------------
+
+        /// <summary>
+        /// Dims tiles that cannot receive a penalty cube.
+        /// On host: uses actual clue data.
+        /// </summary>
+        private void ApplyPenaltyDimming(int playerIndex)
+        {
+            if (_mapGenerator?.WorldMap == null) return;
+
+            // Only the host has puzzle data; clients get dimming from PhaseChanged handler
+            if (!_isHost || _puzzle == null) return;
+
+            var clue = _puzzle.PlayerClues[playerIndex];
+            bool hasAnyValid = false;
+
+            foreach (var kvp in _mapGenerator.WorldMap)
+            {
+                var hexTile = _mapGenerator.GetHexTile(kvp.Key);
+                if (hexTile == null) continue;
+
+                bool hasCube = _tokenPlacer != null && _tokenPlacer.HasAnyCube(kvp.Key);
+                bool hasToken = _tokenPlacer != null && _tokenPlacer.HasPlayerToken(kvp.Key, playerIndex);
+                bool clueMatches = clue.Check(kvp.Value, _mapGenerator.WorldMap);
+                bool isInvalid = clueMatches || hasCube || hasToken;
+
+                hexTile.SetDimmed(isInvalid);
+                if (!isInvalid) hasAnyValid = true;
+            }
+
+            if (!hasAnyValid)
+            {
+                _uiManager?.LogPanel?.AddSystemMessage(L.Get("timer_auto_penalty"));
+                ClearTileDimming();
+                _turnManager.SkipTurn();
+            }
+        }
+
+        /// <summary>
+        /// Applies dimming on client side during penalty placement.
+        /// Clients don't have clue data for other players, so they dim tiles with cubes only.
+        /// For the local player, dim tiles that match their clue.
+        /// </summary>
+        private void ApplyClientPenaltyDimming(int playerIndex)
+        {
+            if (_mapGenerator?.WorldMap == null) return;
+
+            foreach (var kvp in _mapGenerator.WorldMap)
+            {
+                var hexTile = _mapGenerator.GetHexTile(kvp.Key);
+                if (hexTile == null) continue;
+
+                bool hasCube = _tokenPlacer != null && _tokenPlacer.HasAnyCube(kvp.Key);
+                // Dim tiles with cubes for everyone; clients can't see other players' clues
+                hexTile.SetDimmed(hasCube);
+            }
+        }
+
+        private void ClearTileDimming()
+        {
+            if (_mapGenerator?.WorldMap == null) return;
+
+            foreach (var kvp in _mapGenerator.WorldMap)
+            {
+                var hexTile = _mapGenerator.GetHexTile(kvp.Key);
+                hexTile?.SetDimmed(false);
+            }
         }
 
         // =============================================================
@@ -796,6 +1201,9 @@ namespace Cryptid.Network
                 case NetMsg.PenaltyResult:    Handle_PenaltyResult(reader); break;
                 case NetMsg.LobbyUpdate:     Handle_LobbyUpdate(reader); break;
                 case NetMsg.PlayerNames:     Handle_PlayerNames(reader); break;
+                case NetMsg.TimerSync:       Handle_TimerSync(reader); break;
+                case NetMsg.TimerStop:       Handle_TimerStop(reader); break;
+                case NetMsg.ChatMessage:     Handle_ChatMessage(reader); break;
 
                 // Client → Host messages
                 case NetMsg.ChooseAction:     Handle_ChooseAction(senderId, reader); break;
@@ -805,6 +1213,7 @@ namespace Cryptid.Network
                 case NetMsg.RequestStart:     Handle_RequestStart(senderId); break;
                 case NetMsg.SetNickname:     Handle_SetNickname(senderId, reader); break;
                 case NetMsg.ToggleReady:     Handle_ToggleReady(senderId, reader); break;
+                case NetMsg.SendChat:        Handle_SendChat(senderId, reader); break;
 
                 default:
                     Debug.LogWarning($"[NetworkGameManager] Unknown message type: {msgType}");
@@ -874,6 +1283,14 @@ namespace Cryptid.Network
             reader.ReadValueSafe(out byte phase);
 
             _currentPhase = (TurnPhase)phase;
+
+            // Clear dimming before applying new state
+            ClearTileDimming();
+
+            // Apply penalty dimming on client side
+            if (_currentPhase == TurnPhase.PenaltyPlacement)
+                ApplyClientPenaltyDimming(playerIndex);
+
             OnPhaseChanged?.Invoke(playerIndex, _currentPhase);
         }
 
@@ -953,6 +1370,14 @@ namespace Cryptid.Network
             reader.ReadValueSafe(out byte phase);
             _gamePhase = (GamePhase)phase;
             OnGamePhaseChanged?.Invoke(_gamePhase);
+
+            // Client-side: if returning to lobby, clean up game state
+            if (_gamePhase == GamePhase.Lobby && !_isHost)
+            {
+                CleanupClientGameState();
+                var connectionMgr = FindFirstObjectByType<ConnectionManager>();
+                connectionMgr?.ShowLobbyAfterGame();
+            }
         }
 
         private void Handle_ShowError(FastBufferReader reader)
@@ -1006,6 +1431,14 @@ namespace Cryptid.Network
         private void Handle_RequestStart(ulong senderId)
         {
             if (!_isHost) return;
+
+            // If game is over and client requests restart, return to lobby
+            if (_gamePhase == GamePhase.GameOver)
+            {
+                ReturnToLobby();
+                return;
+            }
+
             Debug.Log($"[NetworkGameManager] Client {senderId} requested game start.");
         }
 
@@ -1054,6 +1487,110 @@ namespace Cryptid.Network
             for (int i = 0; i < count; i++)
                 _playerNames[i] = ReadString(reader);
             OnPlayerNamesReceived?.Invoke(_playerNames);
+        }
+
+        private void Handle_TimerSync(FastBufferReader reader)
+        {
+            reader.ReadValueSafe(out float duration);
+            // Client-side: start a local timer for display
+            if (_turnTimer == null)
+            {
+                _turnTimer = gameObject.AddComponent<TurnTimer>();
+                _turnTimer.OnTimerTick += tick => _uiManager?.TurnIndicator?.UpdateTimer(tick);
+                _turnTimer.OnTimerExpired += () => _uiManager?.TurnIndicator?.HideTimer();
+            }
+            if (duration >= TurnTimer.TurnDuration - 1f)
+                _turnTimer.StartTurnTimer();
+            else
+                _turnTimer.StartPenaltyTimer();
+        }
+
+        private void Handle_TimerStop(FastBufferReader reader)
+        {
+            _turnTimer?.Stop();
+            _uiManager?.TurnIndicator?.HideTimer();
+        }
+
+        private void Handle_ChatMessage(FastBufferReader reader)
+        {
+            reader.ReadValueSafe(out int playerIndex);
+            string message = ReadString(reader);
+            string senderName = ReadString(reader);
+
+            if (playerIndex < 0)
+            {
+                // System message (connect/disconnect/etc.)
+                _uiManager?.LogPanel?.AddSystemMessage(message);
+            }
+            else
+            {
+                // Player chat message
+                _uiManager?.LogPanel?.AddEntry(playerIndex,
+                    $"[{senderName}]: {message}");
+            }
+        }
+
+        // =============================================================
+        // Host: Chat Handler
+        // =============================================================
+
+        private void Handle_SendChat(ulong senderId, FastBufferReader reader)
+        {
+            if (!_isHost) return;
+            string message = ReadString(reader);
+
+            if (!_clientPlayerMap.TryGetValue(senderId, out int playerIndex)) return;
+
+            string senderName = _playerNicknames.TryGetValue(senderId, out var n)
+                ? n : $"Player {playerIndex + 1}";
+
+            // Show on host's log
+            _uiManager?.LogPanel?.AddEntry(playerIndex,
+                $"[{senderName}]: {message}");
+
+            // Broadcast to all other clients
+            SendToAllClients(NetMsg.ChatMessage, w =>
+            {
+                w.WriteValueSafe(playerIndex);
+                WriteString(w, message);
+                WriteString(w, senderName);
+            });
+        }
+
+        // =============================================================
+        // Public Chat API
+        // =============================================================
+
+        /// <summary>
+        /// Sends a chat message from the local player.
+        /// Host broadcasts immediately; clients send to host for relay.
+        /// </summary>
+        public void SendChatMessage(string message)
+        {
+            if (string.IsNullOrWhiteSpace(message)) return;
+
+            if (_isHost)
+            {
+                string senderName = _playerNicknames.TryGetValue(
+                    NetworkManager.Singleton.LocalClientId, out var n)
+                    ? n : $"Player {_localPlayerIndex + 1}";
+
+                // Show on host's local log
+                _uiManager?.LogPanel?.AddEntry(_localPlayerIndex,
+                    $"[{senderName}]: {message}");
+
+                // Broadcast to all clients
+                SendToAllClients(NetMsg.ChatMessage, w =>
+                {
+                    w.WriteValueSafe(_localPlayerIndex);
+                    WriteString(w, message);
+                    WriteString(w, senderName);
+                });
+            }
+            else
+            {
+                SendToHost(NetMsg.SendChat, w => WriteString(w, message));
+            }
         }
 
         // =============================================================

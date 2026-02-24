@@ -85,9 +85,9 @@ namespace Cryptid.Data
         [Range(1, 4)]
         [SerializeField] private int _tigerTerritoryCount = 2;
 
-        [Tooltip("Number of Wolf territory centers to place")]
+        [Tooltip("Number of Deer territory centers to place")]
         [Range(1, 4)]
-        [SerializeField] private int _wolfTerritoryCount = 2;
+        [SerializeField] private int _deerTerritoryCount = 2;
 
         [Tooltip("Radius (in hexes) of each animal territory from its center")]
         [Range(1, 3)]
@@ -128,7 +128,7 @@ namespace Cryptid.Data
         public int AbandonedShackCount => _abandonedShackCount;
         public int MinStructureDistance => _minStructureDistance;
         public int TigerTerritoryCount => _tigerTerritoryCount;
-        public int WolfTerritoryCount => _wolfTerritoryCount;
+        public int DeerTerritoryCount => _deerTerritoryCount;
         public int AnimalTerritoryRadius => _animalTerritoryRadius;
         public int MinTerritoryDistance => _minTerritoryDistance;
         public TerrainType[] AnimalBlockedTerrains => _animalBlockedTerrains;

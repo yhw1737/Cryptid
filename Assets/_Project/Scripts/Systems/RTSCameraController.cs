@@ -1,3 +1,4 @@
+using Cryptid.Core;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -56,7 +57,7 @@ namespace Cryptid.Systems
         [SerializeField] private float _orbitSpeedY = 0.2f;
 
         [Tooltip("Minimum vertical angle (degrees from horizon)")]
-        [SerializeField] private float _orbitPitchMin = 15f;
+        [SerializeField] private float _orbitPitchMin = 30f;
 
         [Tooltip("Maximum vertical angle (degrees from horizon)")]
         [SerializeField] private float _orbitPitchMax = 89f;
@@ -79,9 +80,9 @@ namespace Cryptid.Systems
         private bool _isOrbiting;
         private Vector2 _lastMouseScreenPos;
         private float _targetYaw;
-        private float _targetPitch = 60f; // Start at 60° from horizon (looking mostly down)
+        private float _targetPitch = 45f; // Start at 45° from horizon
         private float _currentYaw;
-        private float _currentPitch = 60f;
+        private float _currentPitch = 45f;
         private Vector3 _orbitPivot; // Point we orbit around
 
         // Input System references
@@ -97,11 +98,30 @@ namespace Cryptid.Systems
             if (_cam == null)
                 _cam = Camera.main;
 
-            // Use orthographic projection for clean top-down hex view
-            if (_cam != null)
-                _cam.orthographic = true;
+            // Apply projection from settings
+            ApplyProjection(SettingsManager.UsePerspective);
 
             _mouse = Mouse.current;
+        }
+
+        private void OnEnable()
+        {
+            SettingsManager.OnPerspectiveChanged += ApplyProjection;
+        }
+
+        private void OnDisable()
+        {
+            SettingsManager.OnPerspectiveChanged -= ApplyProjection;
+        }
+
+        private void ApplyProjection(bool usePerspective)
+        {
+            if (_cam == null) return;
+            _cam.orthographic = !usePerspective;
+            if (usePerspective)
+            {
+                _cam.fieldOfView = 60f;
+            }
         }
 
         private void Start()
@@ -196,8 +216,8 @@ namespace Cryptid.Systems
                 Vector2 currentScreenPos = _mouse.position.ReadValue();
                 Vector2 delta = currentScreenPos - _lastMouseScreenPos;
 
-                _targetYaw += delta.x * _orbitSpeedX;
-                _targetPitch -= delta.y * _orbitSpeedY;
+                _targetYaw -= delta.x * _orbitSpeedX;    // Left/right: reversed
+                _targetPitch -= delta.y * _orbitSpeedY;   // Up/down: original direction
                 _targetPitch = Mathf.Clamp(_targetPitch, _orbitPitchMin, _orbitPitchMax);
 
                 _lastMouseScreenPos = currentScreenPos;
@@ -367,7 +387,7 @@ namespace Cryptid.Systems
             _orbitPivot = Vector3.zero;
             _targetZoom = (_zoomMin + _zoomMax) * 0.5f;
             _targetYaw = 0f;
-            _targetPitch = 60f;
+            _targetPitch = 45f;
         }
     }
 }

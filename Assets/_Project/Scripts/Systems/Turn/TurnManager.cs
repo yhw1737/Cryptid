@@ -365,6 +365,16 @@ namespace Cryptid.Systems.Turn
         // Internal
         // ---------------------------------------------------------
 
+        /// <summary>
+        /// Force-skips the current turn (e.g., due to timer expiration).
+        /// Advances to the next player regardless of current phase.
+        /// </summary>
+        public void SkipTurn()
+        {
+            Debug.Log($"[TurnManager] Skipping turn for Player {_currentPlayerIndex + 1}.");
+            EndTurn();
+        }
+
         private void EndTurn()
         {
             SetPhase(TurnPhase.TurnEnd);

@@ -1,3 +1,4 @@
+using DG.Tweening;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -11,6 +12,47 @@ namespace Cryptid.UI
     /// </summary>
     public static class UIFactory
     {
+        // ---------------------------------------------------------
+        // Korean Font (lazy-loaded from Resources)
+        // ---------------------------------------------------------
+
+        private static TMP_FontAsset _koreanFont;
+        private static bool _fontLoadAttempted;
+
+        /// <summary>
+        /// Returns the Korean TMP font asset (NotoSansKR).
+        /// Loaded from Resources/Fonts/NotoSansKR-Regular SDF.
+        /// Generate it via Tools → Cryptid → Generate Korean Font Asset.
+        /// </summary>
+        public static TMP_FontAsset KoreanFont
+        {
+            get
+            {
+                // Re-load if previously loaded asset was destroyed (e.g. domain reload)
+                if (_fontLoadAttempted && _koreanFont == null)
+                    _fontLoadAttempted = false;
+
+                if (!_fontLoadAttempted)
+                {
+                    _fontLoadAttempted = true;
+                    _koreanFont = Resources.Load<TMP_FontAsset>("Fonts/NotoSansKR-Regular SDF");
+                    if (_koreanFont == null)
+                        Debug.LogWarning("[UIFactory] Korean font not found at Resources/Fonts/. " +
+                                         "Run Tools \u2192 Cryptid \u2192 Generate Korean Font Asset in the editor.");
+                }
+
+                // Extra safety: verify the atlas texture is alive
+                if (_koreanFont != null && _koreanFont.atlasTexture == null)
+                {
+                    Debug.LogWarning("[UIFactory] Korean font atlas texture is missing. " +
+                        "Re-generate via Tools \u2192 Cryptid \u2192 Generate Korean Font Asset.");
+                    _koreanFont = null;
+                }
+
+                return _koreanFont;
+            }
+        }
+
         // ---------------------------------------------------------
         // Player Colors (0-indexed, wraps around)
         // ---------------------------------------------------------
@@ -117,6 +159,8 @@ namespace Cryptid.UI
             rt.anchoredPosition = Vector2.zero;
 
             var tmp = go.AddComponent<TextMeshProUGUI>();
+            if (KoreanFont != null)
+                tmp.font = KoreanFont;
             tmp.text = text;
             tmp.fontSize = fontSize;
             tmp.alignment = align;
@@ -160,6 +204,61 @@ namespace Cryptid.UI
             // Child text label (non-raycastable so click goes to button)
             var labelTmp = CreateTMP(go.transform, "Label", label, fontSize);
             labelTmp.raycastTarget = false;
+
+            // Add hover/click animations
+            UIAnimator.AddButtonAnimations(btn);
+
+            return btn;
+        }
+
+        /// <summary>
+        /// Creates a UI Button with a Sprite icon instead of text.
+        /// The icon fills the button area with preserved aspect ratio.
+        /// </summary>
+        public static Button CreateImageButton(
+            Transform parent, string name, Sprite icon,
+            float w = 46, float h = 46,
+            Color? bg = null, Color? tint = null)
+        {
+            var go = new GameObject(name, typeof(RectTransform));
+            go.transform.SetParent(parent, false);
+
+            var rt = go.GetComponent<RectTransform>();
+            rt.sizeDelta = new Vector2(w, h);
+
+            var bgImg = go.AddComponent<Image>();
+            bgImg.color = bg ?? ButtonNormal;
+
+            var btn = go.AddComponent<Button>();
+            var cb = btn.colors;
+            cb.normalColor      = bg ?? ButtonNormal;
+            cb.highlightedColor = ButtonHover;
+            cb.pressedColor     = ButtonPressed;
+            cb.selectedColor    = bg ?? ButtonNormal;
+            cb.fadeDuration     = 0.1f;
+            btn.colors = cb;
+
+            // Child image for the icon (non-raycastable so click goes to button)
+            if (icon != null)
+            {
+                var iconGo = new GameObject("Icon", typeof(RectTransform));
+                iconGo.transform.SetParent(go.transform, false);
+
+                var iconRt = iconGo.GetComponent<RectTransform>();
+                iconRt.anchorMin = new Vector2(0.1f, 0.1f);
+                iconRt.anchorMax = new Vector2(0.9f, 0.9f);
+                iconRt.offsetMin = Vector2.zero;
+                iconRt.offsetMax = Vector2.zero;
+
+                var iconImg = iconGo.AddComponent<Image>();
+                iconImg.sprite = icon;
+                iconImg.preserveAspect = true;
+                iconImg.color = tint ?? Color.white;
+                iconImg.raycastTarget = false;
+            }
+
+            // Add hover/click animations
+            UIAnimator.AddButtonAnimations(btn);
 
             return btn;
         }

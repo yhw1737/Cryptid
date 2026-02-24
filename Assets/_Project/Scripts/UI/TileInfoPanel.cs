@@ -1,3 +1,4 @@
+using Cryptid.Core;
 using Cryptid.Data;
 using Cryptid.Systems.Map;
 using TMPro;
@@ -42,7 +43,7 @@ namespace Cryptid.UI
 
             // Title row
             _titleText = UIFactory.CreateTMP(
-                _root, "TileInfoTitle", "Tile Info",
+                _root, "TileInfoTitle", L.Get("tile_info"),
                 fontSize: 20,
                 align: TextAlignmentOptions.TopLeft,
                 color: UIFactory.Accent);
@@ -54,7 +55,7 @@ namespace Cryptid.UI
 
             // Detail text
             _detailText = UIFactory.CreateTMP(
-                _root, "TileInfoDetail", "Hover over a tile...",
+                _root, "TileInfoDetail", L.Get("hover_tile"),
                 fontSize: 16,
                 align: TextAlignmentOptions.TopLeft,
                 color: Color.white);
@@ -81,8 +82,8 @@ namespace Cryptid.UI
         {
             if (tile == null)
             {
-                _titleText.text = "Tile Info";
-                _detailText.text = "Hover over a tile...";
+                _titleText.text = L.Get("tile_info");
+                _detailText.text = L.Get("hover_tile");
                 return;
             }
 
@@ -91,19 +92,19 @@ namespace Cryptid.UI
             var offset = coords.ToOffset();
 
             // Title: coordinates
-            _titleText.text = $"Tile ({offset.x}, {offset.y})";
+            _titleText.text = L.Format("tile_coords", offset.x, offset.y);
 
             // Detail lines
             string terrain = GetTerrainDisplay(data.Terrain);
             string structure = data.Structure != StructureType.None
-                ? $"\nStructure: <color=#FF6666>{data.Structure}</color>"
-                : "\nStructure: <color=#888>None</color>";
+                ? $"\n{L.Get("label_structure")} <color=#FF6666>{L.StructureName(data.Structure)}</color>"
+                : $"\n{L.Get("label_structure")} <color=#888>{L.Get("none")}</color>";
             string animal = data.Animal != AnimalType.None
-                ? $"\nAnimal: <color=#FFAA00>{data.Animal}</color>"
-                : "\nAnimal: <color=#888>None</color>";
-            string cubeCoords = $"\nCube: {coords}";
+                ? $"\n{L.Get("label_animal")} <color=#FFAA00>{L.AnimalName(data.Animal)}</color>"
+                : $"\n{L.Get("label_animal")} <color=#888>{L.Get("none")}</color>";
+            string cubeCoords = $"\n{L.Get("label_cube")} {coords}";
 
-            _detailText.text = $"Terrain: {terrain}{structure}{animal}{cubeCoords}";
+            _detailText.text = $"{L.Get("label_terrain")} {terrain}{structure}{animal}{cubeCoords}";
         }
 
         // ---------------------------------------------------------
@@ -121,7 +122,7 @@ namespace Cryptid.UI
                 TerrainType.Mountain => "#9E9A96",
                 _                    => "#FFFFFF"
             };
-            return $"<color={hex}>{terrain}</color>";
+            return $"<color={hex}>{L.TerrainName(terrain)}</color>";
         }
     }
 }

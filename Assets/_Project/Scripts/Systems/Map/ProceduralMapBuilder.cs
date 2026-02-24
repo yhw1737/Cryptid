@@ -292,10 +292,10 @@ namespace Cryptid.Systems.Map
                     return false;
             }
 
-            // Place Wolf territories
-            for (int i = 0; i < config.WolfTerritoryCount; i++)
+            // Place Deer territories
+            for (int i = 0; i < config.DeerTerritoryCount; i++)
             {
-                if (!PlaceTerritory(map, eligible, centers, AnimalType.Wolf,
+                if (!PlaceTerritory(map, eligible, centers, AnimalType.Deer,
                     config.AnimalTerritoryRadius, config.MinTerritoryDistance,
                     blocked, rng))
                     return false;

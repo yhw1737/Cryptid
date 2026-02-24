@@ -1,3 +1,5 @@
+using Cryptid.Core;
+using Cryptid.Network;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -9,6 +11,7 @@ namespace Cryptid.UI
     /// Each player gets a colored tab showing their nickname.
     /// The local player's tab is highlighted with accent styling.
     /// The active turn player's tab is visually emphasized.
+    /// Includes voice toggle buttons (mic/speaker) for the local player.
     /// </summary>
     public class PlayerHUDPanel : MonoBehaviour
     {
@@ -29,6 +32,12 @@ namespace Cryptid.UI
         private int _localPlayerIndex = -1;
         private int _activePlayerIndex = -1;
         private int _playerCount;
+
+        // Voice toggle buttons
+        private Button _micBtn;
+        private Image _micIcon;
+        private Button _speakerBtn;
+        private Image _speakerIcon;
 
         // ---------------------------------------------------------
         // Colours
@@ -70,6 +79,26 @@ namespace Cryptid.UI
                 _entries[i] = CreateEntry(root, i);
                 _entries[i].Root.SetActive(false);
             }
+
+            // Voice toggle buttons (right side, icon-based)
+            _micBtn = UIFactory.CreateImageButton(root, "MicToggle",
+                IconProvider.MicOn, 40, 36, new Color(0.20f, 0.55f, 0.35f));
+            _micBtn.onClick.AddListener(() => VivoxManager.Instance?.ToggleInputMute());
+            _micIcon = _micBtn.transform.Find("Icon")?.GetComponent<Image>();
+
+            _speakerBtn = UIFactory.CreateImageButton(root, "SpeakerToggle",
+                IconProvider.SpeakerOn, 40, 36, new Color(0.20f, 0.55f, 0.35f));
+            _speakerBtn.onClick.AddListener(() => VivoxManager.Instance?.ToggleOutputMute());
+            _speakerIcon = _speakerBtn.transform.Find("Icon")?.GetComponent<Image>();
+
+            // Subscribe to mute changes
+            if (VivoxManager.Instance != null)
+            {
+                VivoxManager.Instance.OnMuteStateChanged += UpdateVoiceButtonVisuals;
+                UpdateVoiceButtonVisuals(
+                    VivoxManager.Instance.IsInputMuted,
+                    VivoxManager.Instance.IsOutputMuted);
+            }
         }
 
         private PlayerEntry CreateEntry(RectTransform parent, int index)
@@ -105,7 +134,7 @@ namespace Cryptid.UI
 
             // Name text
             entry.NameText = UIFactory.CreateTMP(go.transform, "Name",
-                $"Player {index + 1}", fontSize: 16,
+                L.Format("player_default", index + 1), fontSize: 16,
                 align: TextAlignmentOptions.Center);
             entry.NameText.margin = new Vector4(12, 0, 4, 0);
             entry.NameText.raycastTarget = false;
@@ -199,6 +228,51 @@ namespace Cryptid.UI
                     ? Color.white
                     : new Color(0.85f, 0.85f, 0.85f);
             }
+        }
+
+        // ---------------------------------------------------------
+        // Voice Toggle Visuals
+        // ---------------------------------------------------------
+
+        private void UpdateVoiceButtonVisuals(bool inputMuted, bool outputMuted)
+        {
+            if (_micBtn != null)
+            {
+                // Swap icon sprite
+                if (_micIcon != null)
+                    _micIcon.sprite = inputMuted ? IconProvider.MicOff : IconProvider.MicOn;
+
+                var baseColor = inputMuted
+                    ? new Color(0.6f, 0.2f, 0.2f) : new Color(0.20f, 0.55f, 0.35f);
+                var cb = _micBtn.colors;
+                cb.normalColor      = baseColor;
+                cb.highlightedColor = baseColor * 1.15f;
+                cb.pressedColor     = baseColor * 0.85f;
+                cb.selectedColor    = baseColor;
+                _micBtn.colors = cb;
+            }
+
+            if (_speakerBtn != null)
+            {
+                // Swap icon sprite
+                if (_speakerIcon != null)
+                    _speakerIcon.sprite = outputMuted ? IconProvider.SpeakerOff : IconProvider.SpeakerOn;
+
+                var baseColor = outputMuted
+                    ? new Color(0.6f, 0.2f, 0.2f) : new Color(0.20f, 0.55f, 0.35f);
+                var cb = _speakerBtn.colors;
+                cb.normalColor      = baseColor;
+                cb.highlightedColor = baseColor * 1.15f;
+                cb.pressedColor     = baseColor * 0.85f;
+                cb.selectedColor    = baseColor;
+                _speakerBtn.colors = cb;
+            }
+        }
+
+        private void OnDestroy()
+        {
+            if (VivoxManager.Instance != null)
+                VivoxManager.Instance.OnMuteStateChanged -= UpdateVoiceButtonVisuals;
         }
     }
 }

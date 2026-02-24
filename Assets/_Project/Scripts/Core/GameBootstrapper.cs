@@ -59,6 +59,7 @@ namespace Cryptid.Core
 
         private GameStateMachine _fsm;
         private TurnManager _turnManager;
+        private TurnTimer _turnTimer;
         private PuzzleSetup _currentPuzzle;
         private PuzzleGenerator _puzzleGenerator;
         private LobbyState _lobbyState;
@@ -113,6 +114,10 @@ namespace Cryptid.Core
             // Subscribe to UI events
             _uiManager.OnActionChosen += HandleUIActionChosen;
             _uiManager.OnRestartRequested += HandleRestart;
+
+            // Subscribe to chat input (local mode — just echo to log)
+            if (_uiManager.LogPanel != null)
+                _uiManager.LogPanel.OnChatMessageSent += HandleLocalChat;
 
             // Subscribe to tile clicks for turn actions
             if (_tileInteraction != null)
@@ -208,6 +213,12 @@ namespace Cryptid.Core
             _turnManager.OnPenaltyCubePlaced += HandlePenaltyCubePlaced;
             _turnManager.OnGameWon += HandleGameWon;
 
+            // Create turn timer
+            _turnTimer = gameObject.AddComponent<TurnTimer>();
+            _turnTimer.OnTimerTick += HandleTimerTick;
+            _turnTimer.OnTimerExpired += HandleTimerExpired;
+            _turnManager.OnPhaseChanged += HandlePhaseChangedForTimer;
+
             Debug.Log("[GameBootstrapper] Setup complete. Puzzle ready.");
         }
 
@@ -280,7 +291,7 @@ namespace Cryptid.Core
                     if (!accepted && _uiManager?.LogPanel != null)
                     {
                         _uiManager.LogPanel.AddEntry(currentPlayer,
-                            "  ⚠ That tile matches your clue! Choose a different tile.");
+                            "  ⚠ " + L.Get("warn_matches_clue"));
                     }
                     break;
 
@@ -307,7 +318,7 @@ namespace Cryptid.Core
             {
                 Debug.Log($"[GameBootstrapper] Tile {coords} blocked — has cube (permanently dead).");
                 _uiManager?.LogPanel?.AddEntry(playerIndex,
-                    "  ⚠ That tile has a cube — permanently blocked.");
+                    L.Get("warn_tile_has_cube"));
                 return false;
             }
 
@@ -315,7 +326,7 @@ namespace Cryptid.Core
             {
                 Debug.Log($"[GameBootstrapper] Player {playerIndex + 1} already has a token at {coords}.");
                 _uiManager?.LogPanel?.AddEntry(playerIndex,
-                    "  ⚠ You already have a token on that tile.");
+                    L.Get("warn_already_token"));
                 return false;
             }
 
@@ -379,7 +390,7 @@ namespace Cryptid.Core
             if (_uiManager?.LogPanel != null)
             {
                 _uiManager.LogPanel.AddEntry(playerIndex,
-                    $"  Penalty: P{playerIndex + 1} places cube at {tile}");
+                    L.Format("log_penalty_placed", L.PlayerShort(playerIndex), tile));
             }
         }
 
@@ -402,7 +413,7 @@ namespace Cryptid.Core
 
         /// <summary>
         /// Handles the "Play Again" button from the GameOver screen.
-        /// Reloads the current scene.
+        /// Reloads the current scene for a fresh game.
         /// </summary>
         private void HandleRestart()
         {
@@ -416,44 +427,8 @@ namespace Cryptid.Core
 
         private void HandleDebugInput()
         {
-            var kb = Keyboard.current;
-            if (kb == null) return;
-
-            // Enter → Start game from lobby
-            if (kb.enterKey.wasPressedThisFrame && _fsm.CurrentPhase == GamePhase.Lobby)
-            {
-                _lobbyState.AddPlayer();
-                return;
-            }
-
-            // Tab → Show state info
-            if (kb.tabKey.wasPressedThisFrame)
-            {
-                LogCurrentState();
-                return;
-            }
-
-            // Turn controls (only during Playing phase)
-            if (_fsm.CurrentPhase != GamePhase.Playing || _turnManager == null) return;
-
-            // Q → Choose Question
-            if (kb.qKey.wasPressedThisFrame &&
-                _turnManager.CurrentPhase == TurnPhase.ChooseAction)
-            {
-                _turnManager.ChooseAction(PlayerAction.Question);
-                Debug.Log("[Debug] Select a tile (click) then press T to target player, " +
-                         "or the tile click will auto-target next player.");
-                return;
-            }
-
-            // S → Choose Search
-            if (kb.sKey.wasPressedThisFrame &&
-                _turnManager.CurrentPhase == TurnPhase.ChooseAction)
-            {
-                _turnManager.ChooseAction(PlayerAction.Search);
-                Debug.Log("[Debug] Click a tile to search.");
-                return;
-            }
+            // NOTE: All keyboard shortcuts (Enter, Q, S, Tab) removed.
+            // They conflict with chat input and trigger unintended actions.
         }
 
         private void LogCurrentState()
@@ -503,6 +478,10 @@ namespace Cryptid.Core
             {
                 _uiManager.OnActionChosen -= HandleUIActionChosen;
                 _uiManager.OnRestartRequested -= HandleRestart;
+
+                // Unsubscribe local chat handler (NetworkGameManager handles chat in network mode)
+                if (_uiManager.LogPanel != null)
+                    _uiManager.LogPanel.OnChatMessageSent -= HandleLocalChat;
             }
 
             enabled = false;
@@ -516,6 +495,160 @@ namespace Cryptid.Core
         public void StartLocalGame()
         {
             _lobbyState.AddPlayer();
+        }
+
+        // ---------------------------------------------------------
+        // Turn Timer
+        // ---------------------------------------------------------
+
+        private void HandlePhaseChangedForTimer(int playerIndex, TurnPhase phase)
+        {
+            if (_turnTimer == null) return;
+
+            // Clear dimming from previous phase
+            ClearTileDimming();
+
+            switch (phase)
+            {
+                case TurnPhase.ChooseAction:
+                case TurnPhase.SelectTile:
+                case TurnPhase.Search:
+                    _turnTimer.StartTurnTimer();
+                    break;
+
+                case TurnPhase.PenaltyPlacement:
+                    _turnTimer.StartPenaltyTimer();
+                    // Dim tiles that cannot receive a penalty cube
+                    ApplyPenaltyDimming(playerIndex);
+                    break;
+
+                default:
+                    _turnTimer.Stop();
+                    _uiManager?.TurnIndicator?.HideTimer();
+                    break;
+            }
+        }
+
+        private void HandleTimerTick(float remaining)
+        {
+            _uiManager?.TurnIndicator?.UpdateTimer(remaining);
+        }
+
+        private void HandleTimerExpired()
+        {
+            if (_turnManager == null) return;
+
+            var phase = _turnManager.CurrentPhase;
+            int player = _turnManager.CurrentPlayerIndex;
+
+            _uiManager?.TurnIndicator?.HideTimer();
+
+            if (phase == TurnPhase.PenaltyPlacement)
+            {
+                // Auto-place penalty cube on a random valid tile
+                AutoPlacePenaltyCube(player);
+            }
+            else
+            {
+                // Time ran out — skip turn
+                _uiManager?.LogPanel?.AddEntry(player, L.Get("timer_expired"));
+                _turnManager.SkipTurn();
+            }
+        }
+
+        private void AutoPlacePenaltyCube(int playerIndex)
+        {
+            if (_currentPuzzle == null || _mapGenerator?.WorldMap == null) return;
+
+            var clue = _currentPuzzle.PlayerClues[playerIndex];
+            foreach (var kvp in _mapGenerator.WorldMap)
+            {
+                // Skip tiles that already have cubes or player tokens
+                if (_tokenPlacer != null &&
+                    (_tokenPlacer.HasAnyCube(kvp.Key) || _tokenPlacer.HasPlayerToken(kvp.Key, playerIndex)))
+                    continue;
+
+                if (!clue.Check(kvp.Value, _mapGenerator.WorldMap))
+                {
+                    // Found a valid tile (clue does NOT match)
+                    _uiManager?.LogPanel?.AddEntry(playerIndex, L.Get("timer_auto_penalty"));
+                    ClearTileDimming();
+                    _turnManager.SubmitPenaltyCube(kvp.Key, _mapGenerator.WorldMap);
+                    return;
+                }
+            }
+
+            // Fallback: skip turn if no valid tile found
+            _uiManager?.LogPanel?.AddEntry(playerIndex, L.Get("timer_auto_penalty"));
+            ClearTileDimming();
+            _turnManager.SkipTurn();
+        }
+
+        // ---------------------------------------------------------
+        // Penalty Tile Dimming
+        // ---------------------------------------------------------
+
+        /// <summary>
+        /// Dims all tiles that cannot receive a penalty cube during PenaltyPlacement.
+        /// Valid penalty tiles: clue does NOT match AND no cube AND no player token.
+        /// </summary>
+        private void ApplyPenaltyDimming(int playerIndex)
+        {
+            if (_currentPuzzle == null || _mapGenerator?.WorldMap == null) return;
+
+            var clue = _currentPuzzle.PlayerClues[playerIndex];
+            bool hasAnyValid = false;
+
+            foreach (var kvp in _mapGenerator.WorldMap)
+            {
+                var hexTile = FindHexTile(kvp.Key);
+                if (hexTile == null) continue;
+
+                bool hasCube = _tokenPlacer != null && _tokenPlacer.HasAnyCube(kvp.Key);
+                bool hasToken = _tokenPlacer != null && _tokenPlacer.HasPlayerToken(kvp.Key, playerIndex);
+                bool clueMatches = clue.Check(kvp.Value, _mapGenerator.WorldMap);
+
+                // A tile is invalid for penalty if: clue matches it, has cube, or has player token
+                bool isInvalid = clueMatches || hasCube || hasToken;
+                hexTile.SetDimmed(isInvalid);
+
+                if (!isInvalid) hasAnyValid = true;
+            }
+
+            // If no valid tiles, auto-skip
+            if (!hasAnyValid)
+            {
+                _uiManager?.LogPanel?.AddSystemMessage(L.Get("timer_auto_penalty"));
+                ClearTileDimming();
+                _turnManager.SkipTurn();
+            }
+        }
+
+        /// <summary>Clears dimming from all tiles.</summary>
+        private void ClearTileDimming()
+        {
+            if (_mapGenerator?.WorldMap == null) return;
+
+            foreach (var kvp in _mapGenerator.WorldMap)
+            {
+                var hexTile = FindHexTile(kvp.Key);
+                hexTile?.SetDimmed(false);
+            }
+        }
+
+        /// <summary>Finds the HexTile component for a given coordinate.</summary>
+        private HexTile FindHexTile(HexCoordinates coords)
+        {
+            // MapGenerator stores spawned tiles by coordinate
+            return _mapGenerator.GetHexTile(coords);
+        }
+
+        /// <summary>Handles chat messages in local/single-player mode (echo to log).</summary>
+        private void HandleLocalChat(string message)
+        {
+            int currentPlayer = _turnManager?.CurrentPlayerIndex ?? 0;
+            string name = L.Format("player_default", currentPlayer + 1);
+            _uiManager?.LogPanel?.AddEntry(currentPlayer, $"[{name}]: {message}");
         }
     }
 }

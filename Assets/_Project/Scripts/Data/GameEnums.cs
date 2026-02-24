@@ -29,12 +29,12 @@ namespace Cryptid.Data
     /// <summary>
     /// Animal territory types that overlay the map.
     /// Each territory covers a contiguous region of hexes.
-    /// Tiger = striped predator, Wolf = pack predator.
+    /// Tiger = striped predator, Deer = forest herbivore.
     /// </summary>
     public enum AnimalType
     {
         None  = 0,
         Tiger = 1,
-        Wolf  = 2
+        Deer  = 2
     }
 }

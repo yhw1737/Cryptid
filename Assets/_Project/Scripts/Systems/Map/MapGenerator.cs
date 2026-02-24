@@ -49,6 +49,16 @@ namespace Cryptid.Systems.Map
             = new Dictionary<HexCoordinates, WorldTile>();
 
         /// <summary>
+        /// Map of coordinates to spawned HexTile components.
+        /// Populated during SpawnVisuals().
+        /// </summary>
+        private readonly Dictionary<HexCoordinates, HexTile> _hexTileMap = new();
+
+        /// <summary>Returns the HexTile component for the given coordinates, or null.</summary>
+        public HexTile GetHexTile(HexCoordinates coords) =>
+            _hexTileMap.TryGetValue(coords, out var tile) ? tile : null;
+
+        /// <summary>
         /// Sets the random seed for procedural map generation.
         /// Call before GenerateMap() to produce deterministic maps.
         /// </summary>
@@ -265,10 +275,11 @@ namespace Cryptid.Systems.Map
 
         /// <summary>
         /// Spawns enriched hex tile visuals with:
-        ///   1. Hex prism base (terrain-colored)
+        ///   1. Hex prism base (terrain-colored, with per-terrain height and color noise)
         ///   2. Terrain decorations from MapDecorationDatabase (trees, rocks, etc.)
-        ///   3. Structure models (StandingStone from asset, AbandonedShack placeholder)
-        ///   4. Animal territory markers (colored capsules with labels)
+        ///   3. Procedural terrain bumps (small rocks, mounds) for natural feel
+        ///   4. Structure models (StandingStone from asset, AbandonedShack placeholder)
+        ///   5. Animal territory markers (colored capsules with labels)
         /// Water tiles are slightly lowered for visual depth.
         /// </summary>
         private void SpawnDebugCubes()
@@ -278,9 +289,12 @@ namespace Cryptid.Systems.Map
             Transform container = GetOrCreateContainer();
             var rng = new System.Random(_mapSeed >= 0 ? _mapSeed + 999 : System.Environment.TickCount);
 
-            // Shared hex meshes (water is thinner + lowered)
-            Mesh hexMesh = HexMeshGenerator.CreateHexPrismMesh(0.1f);
-            Mesh waterMesh = HexMeshGenerator.CreateHexPrismMesh(0.04f);
+            // Pre-generate hex meshes per terrain height
+            Mesh waterMesh   = HexMeshGenerator.CreateHexPrismMesh(0.04f);
+            Mesh desertMesh  = HexMeshGenerator.CreateHexPrismMesh(0.08f);
+            Mesh forestMesh  = HexMeshGenerator.CreateHexPrismMesh(0.12f);
+            Mesh swampMesh   = HexMeshGenerator.CreateHexPrismMesh(0.06f);
+            Mesh mountainMesh = HexMeshGenerator.CreateHexPrismMesh(0.22f);
 
             // Shared URP material template
             Shader urpLit = Shader.Find("Universal Render Pipeline/Lit");
@@ -294,19 +308,43 @@ namespace Cryptid.Systems.Map
 
                 bool isWater = tile.Terrain == TerrainType.Water;
 
-                // ── 1. Hex base ──────────────────────────────────
+                // Per-tile color noise for natural variation
+                float noise = Mathf.PerlinNoise(
+                    worldPos.x * 0.3f + 1000f,
+                    worldPos.z * 0.3f + 1000f);
+                float colorVariation = 0.85f + noise * 0.3f; // 0.85 – 1.15
+
+                // ── 1. Hex base with terrain-specific height ─────
+                Mesh tileMesh = tile.Terrain switch
+                {
+                    TerrainType.Water    => waterMesh,
+                    TerrainType.Desert   => desertMesh,
+                    TerrainType.Forest   => forestMesh,
+                    TerrainType.Swamp    => swampMesh,
+                    TerrainType.Mountain => mountainMesh,
+                    _                    => desertMesh
+                };
+
+                // Vertical offset: water sinks, mountains rise
+                float yOffset = tile.Terrain switch
+                {
+                    TerrainType.Water    => -0.06f,
+                    TerrainType.Swamp    => -0.02f,
+                    TerrainType.Mountain =>  0.08f,
+                    _                    =>  0f
+                };
+
                 var hexObj = new GameObject($"HexTile_{kvp.Key}_{tile.Terrain}");
-                hexObj.transform.position = isWater
-                    ? worldPos + Vector3.down * 0.05f
-                    : worldPos;
+                hexObj.transform.position = worldPos + Vector3.up * yOffset;
                 hexObj.transform.SetParent(container);
 
                 var meshFilter = hexObj.AddComponent<MeshFilter>();
-                meshFilter.sharedMesh = isWater ? waterMesh : hexMesh;
+                meshFilter.sharedMesh = tileMesh;
 
                 var meshRenderer = hexObj.AddComponent<MeshRenderer>();
+                Color baseColor = GetNaturalTerrainColor(tile.Terrain);
                 var mat = new Material(urpLit);
-                mat.color = TileVisualConfig.GetTerrainDebugColor(tile.Terrain);
+                mat.color = baseColor * colorVariation;
 
                 // Water gets semi-transparency
                 if (isWater)
@@ -329,13 +367,25 @@ namespace Cryptid.Systems.Map
 
                 // Collider for raycasting
                 var meshCollider = hexObj.AddComponent<MeshCollider>();
-                meshCollider.sharedMesh = isWater ? waterMesh : hexMesh;
+                meshCollider.sharedMesh = tileMesh;
 
                 // HexTile component for interaction
                 var hexTile = hexObj.AddComponent<HexTile>();
                 hexTile.Initialize(tile);
+                _hexTileMap[tile.Coordinates] = hexTile;
 
-                // ── 2. Terrain decorations ───────────────────────
+                // ── 2. Procedural terrain bumps ──────────────────
+                int bumpCount = GetTerrainBumpCount(tile.Terrain, rng);
+                float baseY = yOffset + GetTerrainPrismHeight(tile.Terrain);
+
+                for (int i = 0; i < bumpCount; i++)
+                {
+                    SpawnTerrainBump(tile.Terrain, worldPos, baseY,
+                                     hexObj.transform, urpLit, rng, colorVariation);
+                    decoCount++;
+                }
+
+                // ── 3. Terrain decorations from database ─────────
                 if (!isWater)
                 {
                     int decoAmount = GetDecorationCount(tile.Terrain, rng);
@@ -346,7 +396,7 @@ namespace Cryptid.Systems.Map
                         {
                             // Random position within hex (inner radius)
                             Vector2 offset = RandomPointInHex(rng, HexMetrics.InnerRadius * 0.6f);
-                            Vector3 decoPos = worldPos + new Vector3(offset.x, 0.1f, offset.y);
+                            Vector3 decoPos = worldPos + new Vector3(offset.x, baseY, offset.y);
                             float yRot = (float)(rng.NextDouble() * 360.0);
                             float scale = 0.15f + (float)(rng.NextDouble() * 0.1);
 
@@ -367,21 +417,160 @@ namespace Cryptid.Systems.Map
                     }
                 }
 
-                // ── 3. Structure ──────────────────────────────────
+                // ── 4. Structure ──────────────────────────────────
                 if (tile.Structure != StructureType.None)
                 {
-                    SpawnStructure(tile.Structure, worldPos, hexObj.transform, urpLit);
+                    SpawnStructure(tile.Structure,
+                                   worldPos + Vector3.up * baseY, hexObj.transform, urpLit);
                 }
 
-                // ── 4. Animal territory marker ───────────────────
+                // ── 5. Animal territory marker ───────────────────
                 if (tile.Animal != AnimalType.None)
                 {
-                    SpawnAnimalMarker(tile.Animal, worldPos, hexObj.transform, urpLit);
+                    SpawnAnimalMarker(tile.Animal,
+                                      worldPos + Vector3.up * baseY, hexObj.transform, urpLit);
                 }
             }
 
             Debug.Log($"[MapGenerator] Spawned {WorldMap.Count} hex tiles " +
                       $"with {decoCount} decorations (enriched mode).");
+        }
+
+        /// <summary>
+        /// Returns a more natural / realistic base color for each terrain type.
+        /// Uses earth-tone palettes inspired by low-poly nature packs.
+        /// </summary>
+        private static Color GetNaturalTerrainColor(TerrainType terrain)
+        {
+            return terrain switch
+            {
+                // Warm sandy beige with slight orange undertone
+                TerrainType.Desert   => new Color(0.82f, 0.72f, 0.50f),
+                // Rich green with earthy depth
+                TerrainType.Forest   => new Color(0.22f, 0.50f, 0.18f),
+                // Deep blue-teal
+                TerrainType.Water    => new Color(0.18f, 0.42f, 0.72f),
+                // Murky olive-brown
+                TerrainType.Swamp    => new Color(0.30f, 0.38f, 0.18f),
+                // Rocky gray-brown
+                TerrainType.Mountain => new Color(0.50f, 0.48f, 0.44f),
+                _                    => Color.magenta
+            };
+        }
+
+        /// <summary>Returns the hex prism height for each terrain type.</summary>
+        private static float GetTerrainPrismHeight(TerrainType terrain)
+        {
+            return terrain switch
+            {
+                TerrainType.Water    => 0.04f,
+                TerrainType.Desert   => 0.08f,
+                TerrainType.Forest   => 0.12f,
+                TerrainType.Swamp    => 0.06f,
+                TerrainType.Mountain => 0.22f,
+                _                    => 0.08f
+            };
+        }
+
+        /// <summary>
+        /// Returns how many procedural terrain bumps to spawn on this tile.
+        /// Mountains get the most, water/swamp get none.
+        /// </summary>
+        private static int GetTerrainBumpCount(TerrainType terrain, System.Random rng)
+        {
+            return terrain switch
+            {
+                TerrainType.Mountain => 2 + rng.Next(3),  // 2-4 rock bumps
+                TerrainType.Desert   => rng.Next(2),       // 0-1 small rocks
+                TerrainType.Forest   => rng.Next(2),       // 0-1 ground mounds
+                TerrainType.Swamp    => 0,
+                TerrainType.Water    => 0,
+                _                    => 0
+            };
+        }
+
+        /// <summary>
+        /// Spawns a small procedural terrain bump (rock or mound) on a hex tile.
+        /// Uses primitive shapes with terrain-appropriate colors.
+        /// </summary>
+        private void SpawnTerrainBump(TerrainType terrain, Vector3 tileWorldPos,
+            float baseY, Transform parent, Shader urpLit, System.Random rng,
+            float colorVariation)
+        {
+            Vector2 offset = RandomPointInHex(rng, HexMetrics.InnerRadius * 0.55f);
+            float yRot = (float)(rng.NextDouble() * 360.0);
+
+            if (terrain == TerrainType.Mountain)
+            {
+                // Rocky mound: squashed sphere or scaled cube
+                bool useRock = rng.NextDouble() > 0.3;
+                var bump = GameObject.CreatePrimitive(
+                    useRock ? PrimitiveType.Sphere : PrimitiveType.Cube);
+                bump.transform.SetParent(parent);
+                bump.transform.position = tileWorldPos +
+                    new Vector3(offset.x, baseY, offset.y);
+
+                float sx = 0.08f + (float)(rng.NextDouble() * 0.12f);
+                float sy = 0.05f + (float)(rng.NextDouble() * 0.10f);
+                float sz = 0.08f + (float)(rng.NextDouble() * 0.12f);
+                bump.transform.localScale = new Vector3(sx, sy, sz);
+                bump.transform.rotation = Quaternion.Euler(
+                    (float)(rng.NextDouble() * 15f),
+                    yRot,
+                    (float)(rng.NextDouble() * 15f));
+                bump.name = "Bump_Rock";
+
+                Destroy(bump.GetComponent<Collider>());
+
+                var r = bump.GetComponent<Renderer>();
+                // Vary between gray and brown for rocky appearance
+                float grayBrown = (float)rng.NextDouble();
+                Color rockColor = Color.Lerp(
+                    new Color(0.45f, 0.43f, 0.40f),  // Gray rock
+                    new Color(0.50f, 0.40f, 0.30f),  // Brown rock
+                    grayBrown) * colorVariation;
+                r.material = new Material(urpLit) { color = rockColor };
+            }
+            else if (terrain == TerrainType.Desert)
+            {
+                // Small sandy pebble
+                var pebble = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                pebble.transform.SetParent(parent);
+                pebble.transform.position = tileWorldPos +
+                    new Vector3(offset.x, baseY - 0.01f, offset.y);
+
+                float s = 0.04f + (float)(rng.NextDouble() * 0.05f);
+                pebble.transform.localScale = new Vector3(s, s * 0.5f, s);
+                pebble.name = "Bump_Pebble";
+
+                Destroy(pebble.GetComponent<Collider>());
+
+                var r = pebble.GetComponent<Renderer>();
+                r.material = new Material(urpLit)
+                {
+                    color = new Color(0.75f, 0.65f, 0.45f) * colorVariation
+                };
+            }
+            else if (terrain == TerrainType.Forest)
+            {
+                // Small earthy mound
+                var mound = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                mound.transform.SetParent(parent);
+                mound.transform.position = tileWorldPos +
+                    new Vector3(offset.x, baseY - 0.02f, offset.y);
+
+                float s = 0.06f + (float)(rng.NextDouble() * 0.06f);
+                mound.transform.localScale = new Vector3(s, s * 0.3f, s);
+                mound.name = "Bump_Mound";
+
+                Destroy(mound.GetComponent<Collider>());
+
+                var r = mound.GetComponent<Renderer>();
+                r.material = new Material(urpLit)
+                {
+                    color = new Color(0.28f, 0.22f, 0.12f) * colorVariation
+                };
+            }
         }
 
         // ---------------------------------------------------------
@@ -503,34 +692,74 @@ namespace Cryptid.Systems.Map
         }
 
         /// <summary>
-        /// Spawns a colored capsule as an animal territory marker.
-        /// Tiger = orange-striped, Wolf = dark gray.
+        /// Spawns an animal model from prefab at the tile edge.
+        /// Uses Deer_001 and Tiger_001 prefabs from ithappy Animals_FREE pack.
+        /// Falls back to colored capsule if prefab not found.
         /// </summary>
         private void SpawnAnimalMarker(AnimalType animal, Vector3 worldPos,
                                        Transform parent, Shader urpLit)
         {
             // Position at tile edge so it doesn't overlap structure
-            Vector3 markerPos = worldPos + new Vector3(0.3f, 0.2f, 0.3f);
+            Vector3 markerPos = worldPos + new Vector3(0.3f, 0.0f, 0.3f);
 
-            var marker = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-            marker.transform.position = markerPos;
-            marker.transform.localScale = new Vector3(0.12f, 0.15f, 0.12f);
-            marker.transform.SetParent(parent);
-            marker.name = $"Animal_{animal}";
-
-            // Remove collider so hover is not blocked
-            Destroy(marker.GetComponent<Collider>());
-
-            Color animalColor = animal switch
+            string prefabName = animal switch
             {
-                AnimalType.Tiger => new Color(0.95f, 0.55f, 0.10f), // Orange
-                AnimalType.Wolf  => new Color(0.45f, 0.45f, 0.50f), // Dark gray
-                _                => Color.magenta
+                AnimalType.Tiger => "Tiger_001",
+                AnimalType.Deer  => "Deer_001",
+                _                => null
             };
 
-            var r = marker.GetComponent<Renderer>();
-            var m = new Material(urpLit) { color = animalColor };
-            r.material = m;
+            // Try loading the prefab from the ithappy Animals_FREE pack
+            GameObject prefab = null;
+            if (prefabName != null)
+            {
+                // Try Resources.Load first, then fall back to known path
+                prefab = Resources.Load<GameObject>($"Animals/{prefabName}");
+
+                #if UNITY_EDITOR
+                if (prefab == null)
+                {
+                    prefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(
+                        $"Assets/ithappy/Animals_FREE/Prefabs/{prefabName}.prefab");
+                }
+                #endif
+            }
+
+            if (prefab != null)
+            {
+                var marker = Instantiate(prefab, markerPos, Quaternion.identity, parent);
+                marker.transform.localScale = Vector3.one * 0.25f;
+                marker.name = $"Animal_{animal}";
+
+                // Remove colliders so hover works on hex base
+                foreach (var col in marker.GetComponentsInChildren<Collider>())
+                    Destroy(col);
+
+                // Fix materials for URP
+                EnsureURPMaterials(marker, urpLit);
+            }
+            else
+            {
+                // Fallback: colored capsule
+                var marker = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+                marker.transform.position = markerPos + Vector3.up * 0.2f;
+                marker.transform.localScale = new Vector3(0.12f, 0.15f, 0.12f);
+                marker.transform.SetParent(parent);
+                marker.name = $"Animal_{animal}";
+
+                Destroy(marker.GetComponent<Collider>());
+
+                Color animalColor = animal switch
+                {
+                    AnimalType.Tiger => new Color(0.95f, 0.55f, 0.10f),
+                    AnimalType.Deer  => new Color(0.72f, 0.53f, 0.30f),
+                    _                => Color.magenta
+                };
+
+                var r = marker.GetComponent<Renderer>();
+                var m = new Material(urpLit) { color = animalColor };
+                r.material = m;
+            }
         }
 
         /// <summary>
@@ -589,6 +818,7 @@ namespace Cryptid.Systems.Map
         [ContextMenu("Clear Visuals")]
         public void ClearVisuals()
         {
+            _hexTileMap.Clear();
             Transform container = _tileContainer != null ? _tileContainer : transform;
 
             for (int i = container.childCount - 1; i >= 0; i--)

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Cryptid.Core;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -50,7 +51,7 @@ namespace Cryptid.UI
             var headerContainer = UIFactory.CreatePanel(root, "Header");
             headerContainer.sizeDelta = new Vector2(370f, 25f);
             _headerText = UIFactory.CreateTMP(headerContainer, "HeaderText",
-                "Ask which player?", 16, color: new Color(0.7f, 0.7f, 0.7f));
+                L.Get("ask_which_player"), 16, color: new Color(0.7f, 0.7f, 0.7f));
 
             // Player button row
             var row = UIFactory.CreatePanel(root, "PlayerRow");
@@ -91,13 +92,13 @@ namespace Cryptid.UI
             }
 
             HighlightSelected();
-            gameObject.SetActive(true);
+            UIAnimator.ShowPanel(gameObject);
         }
 
         /// <summary>Hides the panel.</summary>
         public void Hide()
         {
-            gameObject.SetActive(false);
+            UIAnimator.HidePanel(gameObject);
         }
 
         // ---------------------------------------------------------

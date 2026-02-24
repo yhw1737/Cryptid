@@ -1,9 +1,10 @@
 using System;
+using System.Collections.Generic;
 using Cryptid.Core;
 using Cryptid.UI;
+using Steamworks;
 using TMPro;
 using Unity.Netcode;
-using Unity.Netcode.Transports.UTP;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -18,9 +19,6 @@ namespace Cryptid.Network
         [Header("Scene References")]
         [SerializeField] private GameBootstrapper _bootstrapper;
 
-        [Header("Network Settings")]
-        [SerializeField] private ushort _port = 7777;
-
         // ---------------------------------------------------------
         // Runtime
         // ---------------------------------------------------------
@@ -34,6 +32,7 @@ namespace Cryptid.Network
         private GameObject _modePanel;
         private GameObject _joinPanel;
         private GameObject _lobbyPanel;
+        private SettingsPanel _settingsPanel;
 
         // Join panel elements
         private TextMeshProUGUI _joinStatusText;
@@ -49,6 +48,12 @@ namespace Cryptid.Network
         private Button _startButton;
         private TextMeshProUGUI _startButtonLabel;
 
+        // Voice controls
+        private Button _micToggleBtn;
+        private Image _micToggleIcon;
+        private Button _speakerToggleBtn;
+        private Image _speakerToggleIcon;
+
         private struct LobbyEntry
         {
             public GameObject Root;
@@ -58,6 +63,9 @@ namespace Cryptid.Network
         }
 
         private readonly LobbyEntry[] _lobbyEntries = new LobbyEntry[5];
+
+        // Localized label tracking for language refresh
+        private readonly List<(TextMeshProUGUI text, string key)> _localizedLabels = new();
 
         // ---------------------------------------------------------
         // Lifecycle
@@ -73,6 +81,8 @@ namespace Cryptid.Network
 
         private void OnDestroy()
         {
+            L.OnLanguageChanged -= OnLanguageChanged;
+
             if (_networkGameManager != null)
                 _networkGameManager.OnLobbyUpdated -= UpdateLobbyDisplay;
 
@@ -86,15 +96,23 @@ namespace Cryptid.Network
 
         private void BuildUI()
         {
+            // Initialize settings (loads language, volume, etc.)
+            SettingsManager.Initialize();
+
             _canvas = UIFactory.CreateScreenCanvas("ConnectionUI_Canvas", 100);
             _canvas.transform.SetParent(transform);
 
             BuildModePanel();
             BuildJoinPanel();
             BuildLobbyPanel();
+            BuildSettingsPanel();
+            BuildSettingsButton();
 
             _joinPanel.SetActive(false);
             _lobbyPanel.SetActive(false);
+
+            L.OnLanguageChanged -= OnLanguageChanged;
+            L.OnLanguageChanged += OnLanguageChanged;
         }
 
         private void BuildModePanel()
@@ -104,25 +122,30 @@ namespace Cryptid.Network
             UIFactory.AddVerticalLayout(root, spacing: 15,
                 padding: new RectOffset(30, 30, 30, 30));
 
-            var title = UIFactory.CreateTMP(root, "Title", "CRYPTID",
+            var title = UIFactory.CreateTMP(root, "Title", L.Get("title_cryptid"),
                 fontSize: 42, color: UIFactory.Accent);
+            Loc(title, "title_cryptid");
             title.GetComponent<RectTransform>().sizeDelta = new Vector2(340, 60);
 
             var subtitle = UIFactory.CreateTMP(root, "Subtitle",
-                "Choose Game Mode", fontSize: 20);
+                L.Get("choose_game_mode"), fontSize: 20);
+            Loc(subtitle, "choose_game_mode");
             subtitle.GetComponent<RectTransform>().sizeDelta = new Vector2(340, 30);
 
             var localBtn = UIFactory.CreateButton(root, "LocalBtn",
-                "Local Game", 340, 55, new Color(0.18f, 0.80f, 0.44f));
+                L.Get("local_game"), 340, 55, new Color(0.18f, 0.80f, 0.44f));
             localBtn.onClick.AddListener(StartLocalGame);
+            Loc(localBtn.GetComponentInChildren<TextMeshProUGUI>(), "local_game");
 
             var hostBtn = UIFactory.CreateButton(root, "HostBtn",
-                "Host Game", 340, 55, new Color(0.20f, 0.60f, 0.86f));
+                L.Get("host_game"), 340, 55, new Color(0.20f, 0.60f, 0.86f));
             hostBtn.onClick.AddListener(ShowHostLobby);
+            Loc(hostBtn.GetComponentInChildren<TextMeshProUGUI>(), "host_game");
 
             var joinBtn = UIFactory.CreateButton(root, "JoinBtn",
-                "Join Game", 340, 55, new Color(0.95f, 0.61f, 0.07f));
+                L.Get("join_game"), 340, 55, new Color(0.95f, 0.61f, 0.07f));
             joinBtn.onClick.AddListener(ShowJoinPanel);
+            Loc(joinBtn.GetComponentInChildren<TextMeshProUGUI>(), "join_game");
         }
 
         private void BuildJoinPanel()
@@ -132,23 +155,30 @@ namespace Cryptid.Network
             UIFactory.AddVerticalLayout(root, spacing: 12,
                 padding: new RectOffset(25, 25, 25, 25));
 
-            var title = UIFactory.CreateTMP(root, "Title",
-                "Join Game", fontSize: 28, color: UIFactory.Accent);
-            title.GetComponent<RectTransform>().sizeDelta = new Vector2(350, 40);
+            var joinTitle = UIFactory.CreateTMP(root, "Title",
+                L.Get("join_game"), fontSize: 28, color: UIFactory.Accent);
+            Loc(joinTitle, "join_game");
+            joinTitle.GetComponent<RectTransform>().sizeDelta = new Vector2(350, 40);
 
-            // IP Input
-            _ipInput = CreateInputField(root, "IPInput", "127.0.0.1", 340, 45);
+            // Steam ID Input
+            _ipInput = CreateInputField(root, "SteamIdInput", "", 340, 45);
+            _ipInput.contentType = TMP_InputField.ContentType.IntegerNumber;
+            _ipInput.characterLimit = 20;
+            // Update placeholder text
+            if (_ipInput.placeholder is TextMeshProUGUI ph)
+                ph.text = L.Get("enter_steam_id");
 
             var connectBtn = UIFactory.CreateButton(root, "ConnectBtn",
-                "Connect", 200, 50, new Color(0.20f, 0.60f, 0.86f));
+                L.Get("connect"), 200, 50, new Color(0.20f, 0.60f, 0.86f));
             connectBtn.onClick.AddListener(JoinGame);
+            Loc(connectBtn.GetComponentInChildren<TextMeshProUGUI>(), "connect");
 
             _joinStatusText = UIFactory.CreateTMP(root, "Status",
                 "", fontSize: 16);
             _joinStatusText.GetComponent<RectTransform>().sizeDelta = new Vector2(350, 30);
 
             var cancelBtn = UIFactory.CreateButton(root, "CancelBtn",
-                "Cancel", 200, 40, new Color(0.6f, 0.2f, 0.2f), fontSize: 18);
+                L.Get("cancel"), 200, 40, new Color(0.6f, 0.2f, 0.2f), fontSize: 18);
             cancelBtn.onClick.AddListener(CancelNetworking);
         }
 
@@ -160,7 +190,7 @@ namespace Cryptid.Network
                 padding: new RectOffset(20, 20, 20, 20));
 
             // Title
-            _lobbyTitle = UIFactory.CreateTMP(root, "Title", "LOBBY",
+            _lobbyTitle = UIFactory.CreateTMP(root, "Title", L.Get("lobby"),
                 fontSize: 32, color: UIFactory.Accent);
             _lobbyTitle.GetComponent<RectTransform>().sizeDelta = new Vector2(420, 45);
 
@@ -171,7 +201,7 @@ namespace Cryptid.Network
 
             // Player count
             _lobbyCountText = UIFactory.CreateTMP(root, "CountText",
-                "Players: 0 / 5", fontSize: 18);
+                L.Format("players_count", 0), fontSize: 18);
             _lobbyCountText.GetComponent<RectTransform>().sizeDelta = new Vector2(420, 26);
 
             // Player list container
@@ -192,31 +222,111 @@ namespace Cryptid.Network
 
             // Nickname label + input
             var nickLabel = UIFactory.CreateTMP(root, "NickLabel",
-                "Your Nickname:", fontSize: 16,
+                L.Get("your_nickname"), fontSize: 16,
                 align: TextAlignmentOptions.MidlineLeft);
+            Loc(nickLabel, "your_nickname");
             nickLabel.GetComponent<RectTransform>().sizeDelta = new Vector2(420, 22);
 
             _nicknameInput = CreateInputField(root, "NicknameInput", "", 420, 40, 16);
             _nicknameInput.characterLimit = 16;
             _nicknameInput.onEndEdit.AddListener(OnNicknameChanged);
 
+            // Voice controls row
+            var voiceRow = UIFactory.CreatePanel(root, "VoiceRow");
+            voiceRow.sizeDelta = new Vector2(420, 40);
+            var voiceLayout = UIFactory.AddHorizontalLayout(voiceRow, spacing: 10,
+                padding: new RectOffset(5, 5, 2, 2),
+                childAlignment: TextAnchor.MiddleCenter);
+            voiceLayout.childControlWidth = false;
+            voiceLayout.childForceExpandWidth = false;
+
+            // Mic toggle (icon button)
+            _micToggleBtn = UIFactory.CreateImageButton(voiceRow, "MicBtn",
+                IconProvider.MicOn, 40, 36, new Color(0.20f, 0.55f, 0.35f));
+            _micToggleBtn.onClick.AddListener(OnMicToggle);
+            _micToggleIcon = _micToggleBtn.transform.Find("Icon")?.GetComponent<Image>();
+
+            // Speaker toggle (icon button)
+            _speakerToggleBtn = UIFactory.CreateImageButton(voiceRow, "SpeakerBtn",
+                IconProvider.SpeakerOn, 40, 36, new Color(0.20f, 0.55f, 0.35f));
+            _speakerToggleBtn.onClick.AddListener(OnSpeakerToggle);
+            _speakerToggleIcon = _speakerToggleBtn.transform.Find("Icon")?.GetComponent<Image>();
+
             // Ready button
             _readyButton = UIFactory.CreateButton(root, "ReadyBtn",
-                "\u2717 Not Ready", 300, 45, new Color(0.6f, 0.2f, 0.2f));
+                L.Get("not_ready"), 300, 45, new Color(0.6f, 0.2f, 0.2f));
             _readyButton.onClick.AddListener(ToggleReady);
             _readyButtonLabel = _readyButton.GetComponentInChildren<TextMeshProUGUI>();
 
             // Start game button (host only)
             _startButton = UIFactory.CreateButton(root, "StartBtn",
-                "Start Game (3+ needed)", 300, 45, new Color(0.18f, 0.80f, 0.44f));
+                L.Get("start_game"), 300, 45, new Color(0.18f, 0.80f, 0.44f));
             _startButton.onClick.AddListener(HostStartGame);
             _startButton.interactable = false;
             _startButtonLabel = _startButton.GetComponentInChildren<TextMeshProUGUI>();
+            Loc(_startButtonLabel, "start_game");
 
             // Cancel button
             var cancelBtn = UIFactory.CreateButton(root, "CancelBtn",
-                "Cancel", 200, 35, new Color(0.6f, 0.2f, 0.2f), fontSize: 16);
+                L.Get("cancel"), 200, 35, new Color(0.6f, 0.2f, 0.2f), fontSize: 16);
             cancelBtn.onClick.AddListener(CancelNetworking);
+        }
+
+        private void BuildSettingsPanel()
+        {
+            var settingsRoot = UIFactory.CreatePanel(_canvas.transform,
+                "SettingsPanel", new Color(0.04f, 0.04f, 0.06f, 0.95f));
+            _settingsPanel = settingsRoot.gameObject.AddComponent<SettingsPanel>();
+            _settingsPanel.Build(settingsRoot);
+        }
+
+        /// <summary>Creates a settings icon button anchored to the top-right of the canvas.</summary>
+        private void BuildSettingsButton()
+        {
+            var btn = UIFactory.CreateImageButton(_canvas.transform, "SettingsCornerBtn",
+                IconProvider.Settings, 46, 46, new Color(0.25f, 0.25f, 0.35f, 0.85f));
+            btn.onClick.AddListener(ToggleSettings);
+
+            var rt = btn.GetComponent<RectTransform>();
+            rt.anchorMin = new Vector2(1f, 1f);
+            rt.anchorMax = new Vector2(1f, 1f);
+            rt.pivot = new Vector2(1f, 1f);
+            rt.anchoredPosition = new Vector2(-12f, -12f);
+        }
+
+        private void ShowSettings()
+        {
+            _settingsPanel?.Show(inGame: false);
+        }
+
+        private void ToggleSettings()
+        {
+            if (_settingsPanel != null && _settingsPanel.gameObject.activeSelf)
+                _settingsPanel.Hide();
+            else
+                _settingsPanel?.Show(inGame: false);
+        }
+
+        /// <summary>Registers a TMP label with its localization key for automatic refresh.</summary>
+        private TextMeshProUGUI Loc(TextMeshProUGUI tmp, string key)
+        {
+            _localizedLabels.Add((tmp, key));
+            return tmp;
+        }
+
+        private void OnLanguageChanged(L.Language _)
+        {
+            // Refresh all tracked simple labels
+            foreach (var (text, key) in _localizedLabels)
+            {
+                if (text != null) text.text = L.Get(key);
+            }
+
+            // Refresh contextual labels
+            if (_lobbyTitle != null)
+                _lobbyTitle.text = _isHost ? L.Get("lobby_host") : L.Get("lobby");
+
+            UpdateReadyButtonVisual();
         }
 
         private LobbyEntry CreateLobbyEntry(RectTransform parent, int index)
@@ -243,7 +353,8 @@ namespace Cryptid.Network
             nameGo.transform.SetParent(rt, false);
             nameGo.GetComponent<RectTransform>().sizeDelta = new Vector2(280, 28);
             entry.NameText = nameGo.AddComponent<TextMeshProUGUI>();
-            entry.NameText.text = $"Player {index + 1}";
+            if (UIFactory.KoreanFont != null) entry.NameText.font = UIFactory.KoreanFont;
+            entry.NameText.text = L.Format("player_default", index + 1);
             entry.NameText.fontSize = 17;
             entry.NameText.alignment = TextAlignmentOptions.MidlineLeft;
 
@@ -252,6 +363,7 @@ namespace Cryptid.Network
             readyGo.transform.SetParent(rt, false);
             readyGo.GetComponent<RectTransform>().sizeDelta = new Vector2(60, 28);
             entry.ReadyText = readyGo.AddComponent<TextMeshProUGUI>();
+            if (UIFactory.KoreanFont != null) entry.ReadyText.font = UIFactory.KoreanFont;
             entry.ReadyText.text = "\u2717";
             entry.ReadyText.fontSize = 20;
             entry.ReadyText.alignment = TextAlignmentOptions.Center;
@@ -290,7 +402,7 @@ namespace Cryptid.Network
             input.textViewport = taRT;
 
             var placeholder = UIFactory.CreateTMP(textArea.transform, "Placeholder",
-                "Enter text...", fontSize,
+                L.Get("enter_text"), fontSize,
                 align: TextAlignmentOptions.MidlineLeft,
                 color: new Color(0.5f, 0.5f, 0.5f));
             placeholder.GetComponent<RectTransform>().sizeDelta = Vector2.zero;
@@ -321,7 +433,7 @@ namespace Cryptid.Network
             Debug.Log("[ConnectionManager] Starting local game.");
         }
 
-        private void ShowHostLobby()
+        private async void ShowHostLobby()
         {
             _isHost = true;
             _myReady = false;
@@ -331,20 +443,25 @@ namespace Cryptid.Network
             SetupNetworking();
             StartHost();
 
-            _lobbyPanel.SetActive(true);
-            _lobbyTitle.text = "LOBBY (Host)";
+            UIAnimator.ShowPanel(_lobbyPanel);
+            _lobbyTitle.text = L.Get("lobby_host");
             _startButton.gameObject.SetActive(true);
             _lobbyIpText.gameObject.SetActive(true);
-            _lobbyIpText.text = $"IP: {GetLocalIPAddress()}:{_port}";
-            _nicknameInput.text = "Player 1";
+            _lobbyIpText.text = SteamManager.Initialized
+                ? $"Steam ID: {SteamManager.MySteamId}" : "Steam ID: (unavailable)";
+            _nicknameInput.text = SteamManager.Initialized
+                ? SteamManager.PlayerName : L.Format("player_default", 1);
             UpdateReadyButtonVisual();
+
+            // Initialize Vivox and join voice channel
+            await InitVivoxAndJoinChannel();
         }
 
         private void ShowJoinPanel()
         {
             _modePanel.SetActive(false);
             _lobbyPanel.SetActive(false);
-            _joinPanel.SetActive(true);
+            UIAnimator.ShowPanel(_joinPanel);
             _joinStatusText.text = "";
         }
 
@@ -366,6 +483,7 @@ namespace Cryptid.Network
             if (_bootstrapper != null)
                 _bootstrapper.DisableForNetworkMode();
 
+            EnsureSteam();
             EnsureNetworkManager();
 
             if (_networkGameManager == null)
@@ -373,6 +491,14 @@ namespace Cryptid.Network
                 var go = NetworkManager.Singleton.gameObject;
                 _networkGameManager = go.AddComponent<NetworkGameManager>();
             }
+        }
+
+        /// <summary>Ensures SteamManager singleton exists and is initialized.</summary>
+        private void EnsureSteam()
+        {
+            if (SteamManager.Instance != null) return;
+            var steamGo = new GameObject("SteamManager");
+            steamGo.AddComponent<SteamManager>();
         }
 
         private void EnsureNetworkManager()
@@ -383,14 +509,13 @@ namespace Cryptid.Network
             DontDestroyOnLoad(go);
 
             var nm = go.AddComponent<NetworkManager>();
-            var transport = go.AddComponent<UnityTransport>();
-            transport.SetConnectionData("127.0.0.1", _port);
+            var transport = go.AddComponent<FacepunchTransport>();
 
             if (nm.NetworkConfig == null)
                 nm.NetworkConfig = new NetworkConfig();
             nm.NetworkConfig.NetworkTransport = transport;
 
-            Debug.Log("[ConnectionManager] Created NetworkManager with UnityTransport.");
+            Debug.Log("[ConnectionManager] Created NetworkManager with FacepunchTransport.");
         }
 
         // ---------------------------------------------------------
@@ -399,15 +524,12 @@ namespace Cryptid.Network
 
         private void StartHost()
         {
-            var transport = NetworkManager.Singleton.GetComponent<UnityTransport>();
-            if (transport != null)
-                transport.SetConnectionData("0.0.0.0", _port);
-
             NetworkManager.Singleton.StartHost();
             _networkGameManager.Initialize(isHost: true);
             _networkGameManager.OnLobbyUpdated += UpdateLobbyDisplay;
 
-            Debug.Log($"[ConnectionManager] Hosting on {GetLocalIPAddress()}:{_port}");
+            Debug.Log($"[ConnectionManager] Hosting via Steam Relay " +
+                      $"(SteamId: {SteamClient.SteamId})");
         }
 
         private void HostStartGame()
@@ -425,16 +547,20 @@ namespace Cryptid.Network
 
         private void JoinGame()
         {
-            string ip = _ipInput != null ? _ipInput.text.Trim() : "127.0.0.1";
-            if (string.IsNullOrEmpty(ip)) ip = "127.0.0.1";
+            string steamIdStr = _ipInput != null ? _ipInput.text.Trim() : "";
+            if (!ulong.TryParse(steamIdStr, out ulong hostId) || hostId == 0)
+            {
+                _joinStatusText.text = L.Get("invalid_steam_id");
+                return;
+            }
 
             SetupNetworking();
 
-            var transport = NetworkManager.Singleton.GetComponent<UnityTransport>();
+            var transport = NetworkManager.Singleton.GetComponent<FacepunchTransport>();
             if (transport != null)
-                transport.SetConnectionData(ip, _port);
+                transport.TargetSteamId = new SteamId { Value = hostId };
 
-            _joinStatusText.text = $"Connecting to {ip}:{_port}...";
+            _joinStatusText.text = L.Format("connecting_steam", hostId);
 
             NetworkManager.Singleton.OnClientConnectedCallback += OnJoinConnected;
             NetworkManager.Singleton.OnClientDisconnectCallback += OnJoinDisconnected;
@@ -443,7 +569,7 @@ namespace Cryptid.Network
             _networkGameManager.Initialize(isHost: false);
         }
 
-        private void OnJoinConnected(ulong clientId)
+        private async void OnJoinConnected(ulong clientId)
         {
             if (clientId != NetworkManager.Singleton.LocalClientId) return;
 
@@ -452,13 +578,15 @@ namespace Cryptid.Network
             _isHost = false;
             _myReady = false;
             _joinPanel.SetActive(false);
-            _lobbyPanel.SetActive(true);
+            UIAnimator.ShowPanel(_lobbyPanel);
             _startButton.gameObject.SetActive(false);
             _lobbyIpText.gameObject.SetActive(false);
-            _lobbyTitle.text = "LOBBY";
+            _lobbyTitle.text = L.Get("lobby");
 
             int idx = _networkGameManager.LocalPlayerIndex;
-            _nicknameInput.text = idx >= 0 ? $"Player {idx + 1}" : "Player";
+            _nicknameInput.text = SteamManager.Initialized
+                ? SteamManager.PlayerName
+                : (idx >= 0 ? L.Format("player_default", idx + 1) : L.Format("player_default", 0));
             UpdateReadyButtonVisual();
 
             _networkGameManager.OnLobbyUpdated += UpdateLobbyDisplay;
@@ -467,12 +595,15 @@ namespace Cryptid.Network
                 if (phase == GamePhase.Playing)
                     HideAllPanels();
             };
+
+            // Initialize Vivox and join voice channel
+            await InitVivoxAndJoinChannel();
         }
 
         private void OnJoinDisconnected(ulong clientId)
         {
             if (clientId != NetworkManager.Singleton.LocalClientId) return;
-            _joinStatusText.text = "Disconnected from host.";
+            _joinStatusText.text = L.Get("disconnected");
             Debug.LogWarning("[ConnectionManager] Disconnected from host.");
         }
 
@@ -485,6 +616,101 @@ namespace Cryptid.Network
             if (_myReady) return;
             if (string.IsNullOrWhiteSpace(nickname)) return;
             _networkGameManager?.SetLocalNickname(nickname.Trim());
+        }
+
+        // ---------------------------------------------------------
+        // Voice Controls
+        // ---------------------------------------------------------
+
+        /// <summary>Initializes Vivox, logs in, and joins the lobby voice channel.</summary>
+        private async System.Threading.Tasks.Task InitVivoxAndJoinChannel()
+        {
+            EnsureVivoxManager();
+
+            var vivox = VivoxManager.Instance;
+            if (vivox == null) return;
+
+            await vivox.InitializeAsync();
+            if (!vivox.IsReady)
+            {
+                Debug.LogWarning("[ConnectionManager] Vivox not available — voice chat disabled.");
+                return;
+            }
+
+            string displayName = _nicknameInput != null && !string.IsNullOrWhiteSpace(_nicknameInput.text)
+                ? _nicknameInput.text
+                : (SteamManager.Initialized ? SteamManager.PlayerName : "Player");
+            await vivox.LoginAsync(displayName);
+
+            // If login failed, don't attempt to join channel
+            if (!vivox.IsReady)
+            {
+                Debug.LogWarning("[ConnectionManager] Vivox login failed — skipping channel join.");
+                return;
+            }
+
+            await vivox.JoinChannelAsync("cryptid_lobby");
+
+            // Subscribe to mute state changes for UI update
+            vivox.OnMuteStateChanged -= UpdateVoiceToggleVisuals;
+            vivox.OnMuteStateChanged += UpdateVoiceToggleVisuals;
+
+            UpdateVoiceToggleVisuals(vivox.IsInputMuted, vivox.IsOutputMuted);
+        }
+
+        /// <summary>Ensures VivoxManager singleton exists.</summary>
+        private void EnsureVivoxManager()
+        {
+            if (VivoxManager.Instance != null) return;
+            var go = new GameObject("VivoxManager");
+            go.AddComponent<VivoxManager>();
+        }
+
+        private void OnMicToggle()
+        {
+            VivoxManager.Instance?.ToggleInputMute();
+        }
+
+        private void OnSpeakerToggle()
+        {
+            VivoxManager.Instance?.ToggleOutputMute();
+        }
+
+        private void UpdateVoiceToggleVisuals(bool inputMuted, bool outputMuted)
+        {
+            if (_micToggleBtn != null)
+            {
+                // Swap icon sprite
+                if (_micToggleIcon != null)
+                    _micToggleIcon.sprite = inputMuted ? IconProvider.MicOff : IconProvider.MicOn;
+
+                var baseColor = inputMuted
+                    ? new Color(0.6f, 0.2f, 0.2f)
+                    : new Color(0.20f, 0.55f, 0.35f);
+                var cb = _micToggleBtn.colors;
+                cb.normalColor      = baseColor;
+                cb.highlightedColor = baseColor * 1.15f;
+                cb.pressedColor     = baseColor * 0.85f;
+                cb.selectedColor    = baseColor;
+                _micToggleBtn.colors = cb;
+            }
+
+            if (_speakerToggleBtn != null)
+            {
+                // Swap icon sprite
+                if (_speakerToggleIcon != null)
+                    _speakerToggleIcon.sprite = outputMuted ? IconProvider.SpeakerOff : IconProvider.SpeakerOn;
+
+                var baseColor = outputMuted
+                    ? new Color(0.6f, 0.2f, 0.2f)
+                    : new Color(0.20f, 0.55f, 0.35f);
+                var cb = _speakerToggleBtn.colors;
+                cb.normalColor      = baseColor;
+                cb.highlightedColor = baseColor * 1.15f;
+                cb.pressedColor     = baseColor * 0.85f;
+                cb.selectedColor    = baseColor;
+                _speakerToggleBtn.colors = cb;
+            }
         }
 
         private void ToggleReady()
@@ -501,7 +727,7 @@ namespace Cryptid.Network
 
             if (_myReady)
             {
-                _readyButtonLabel.text = "\u2713 Ready";
+                _readyButtonLabel.text = L.Get("ready");
                 var cb = _readyButton.colors;
                 cb.normalColor = new Color(0.18f, 0.80f, 0.44f);
                 cb.selectedColor = new Color(0.18f, 0.80f, 0.44f);
@@ -509,7 +735,7 @@ namespace Cryptid.Network
             }
             else
             {
-                _readyButtonLabel.text = "\u2717 Not Ready";
+                _readyButtonLabel.text = L.Get("not_ready");
                 var cb = _readyButton.colors;
                 cb.normalColor = new Color(0.6f, 0.2f, 0.2f);
                 cb.selectedColor = new Color(0.6f, 0.2f, 0.2f);
@@ -519,7 +745,7 @@ namespace Cryptid.Network
 
         private void UpdateLobbyDisplay(NetworkGameManager.LobbyPlayerInfo[] players)
         {
-            _lobbyCountText.text = $"Players: {players.Length} / 5";
+            _lobbyCountText.text = L.Format("players_count", players.Length);
 
             for (int i = 0; i < 5; i++)
             {
@@ -529,7 +755,7 @@ namespace Cryptid.Network
                     _lobbyEntries[i].ColorBar.color =
                         UIFactory.GetPlayerColor(players[i].PlayerIndex);
 
-                    string suffix = (players[i].PlayerIndex == 0) ? " (Host)" : "";
+                    string suffix = (players[i].PlayerIndex == 0) ? L.Get("host_suffix") : "";
                     _lobbyEntries[i].NameText.text = $"{players[i].Nickname}{suffix}";
 
                     _lobbyEntries[i].ReadyText.text = players[i].IsReady ? "\u2713" : "\u2717";
@@ -548,13 +774,53 @@ namespace Cryptid.Network
                 bool canStart = _networkGameManager.CanStartGame();
                 _startButton.interactable = canStart;
                 _startButtonLabel.text = players.Length >= 3
-                    ? "Start Game" : $"Start Game ({players.Length}/3 min)";
+                    ? L.Get("start_game") : L.Format("start_game_need", players.Length);
             }
         }
 
         // ---------------------------------------------------------
         // Cancel / Cleanup
         // ---------------------------------------------------------
+
+        /// <summary>
+        /// Shows the lobby panel after a network game ends (return to lobby).
+        /// Called by NetworkGameManager when the host clicks "Play Again".
+        /// Preserves the network connection.
+        /// </summary>
+        public void ShowLobbyAfterGame()
+        {
+            if (_canvas != null)
+                _canvas.gameObject.SetActive(true);
+
+            _modePanel.SetActive(false);
+            _joinPanel.SetActive(false);
+            UIAnimator.ShowPanel(_lobbyPanel);
+
+            _myReady = false;
+            _nicknameInput.interactable = true;
+            UpdateReadyButtonVisual();
+
+            if (_isHost)
+            {
+                _lobbyTitle.text = L.Get("lobby_host");
+                _startButton.gameObject.SetActive(true);
+                _startButton.interactable = false;
+                _lobbyIpText.gameObject.SetActive(true);
+            }
+            else
+            {
+                _lobbyTitle.text = L.Get("lobby");
+                _startButton.gameObject.SetActive(false);
+                _lobbyIpText.gameObject.SetActive(false);
+            }
+
+            // Re-subscribe to lobby updates
+            if (_networkGameManager != null)
+            {
+                _networkGameManager.OnLobbyUpdated -= UpdateLobbyDisplay;
+                _networkGameManager.OnLobbyUpdated += UpdateLobbyDisplay;
+            }
+        }
 
         private void CancelNetworking()
         {
@@ -584,26 +850,5 @@ namespace Cryptid.Network
                 _canvas.gameObject.SetActive(true);
         }
 
-        // ---------------------------------------------------------
-        // Utility
-        // ---------------------------------------------------------
-
-        private static string GetLocalIPAddress()
-        {
-            try
-            {
-                var host = System.Net.Dns.GetHostEntry(System.Net.Dns.GetHostName());
-                foreach (var ip in host.AddressList)
-                {
-                    if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
-                        return ip.ToString();
-                }
-            }
-            catch (Exception e)
-            {
-                Debug.LogWarning($"[ConnectionManager] Could not determine local IP: {e.Message}");
-            }
-            return "127.0.0.1";
-        }
     }
 }
