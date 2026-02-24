@@ -368,7 +368,7 @@ namespace Cryptid.Systems.Map
                             Vector2 offset = RandomPointInHex(rng, HexMetrics.InnerRadius * 0.6f);
                             Vector3 decoPos = worldPos + new Vector3(offset.x, baseY, offset.y);
                             float yRot = (float)(rng.NextDouble() * 360.0);
-                            float scale = 0.15f + (float)(rng.NextDouble() * 0.1);
+                            float scale = 0.3f + (float)(rng.NextDouble() * 0.15f);
 
                             GameObject deco = Instantiate(decoPrefab, decoPos,
                                 Quaternion.Euler(0f, yRot, 0f), hexObj.transform);
@@ -600,7 +600,7 @@ namespace Cryptid.Systems.Map
             {
                 Vector3 pos = worldPos + Vector3.up * 0.1f;
                 GameObject stone = Instantiate(prefab, pos, Quaternion.identity, parent);
-                stone.transform.localScale = Vector3.one * 0.3f;
+                stone.transform.localScale = Vector3.one * 0.45f;
                 stone.name = "Structure_StandingStone";
 
                 // Remove colliders so hover is not blocked
@@ -698,7 +698,7 @@ namespace Cryptid.Systems.Map
             if (prefab != null)
             {
                 var marker = Instantiate(prefab, markerPos, Quaternion.identity, parent);
-                marker.transform.localScale = Vector3.one * 0.25f;
+                marker.transform.localScale = Vector3.one * 0.5f;
                 marker.name = $"Animal_{animal}";
 
                 // Remove colliders so hover works on hex base
@@ -713,7 +713,7 @@ namespace Cryptid.Systems.Map
                 // Fallback: colored capsule
                 var marker = GameObject.CreatePrimitive(PrimitiveType.Capsule);
                 marker.transform.position = markerPos + Vector3.up * 0.2f;
-                marker.transform.localScale = new Vector3(0.12f, 0.15f, 0.12f);
+                marker.transform.localScale = new Vector3(0.25f, 0.3f, 0.25f);
                 marker.transform.SetParent(parent);
                 marker.name = $"Animal_{animal}";
 

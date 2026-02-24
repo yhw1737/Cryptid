@@ -234,8 +234,32 @@ namespace Cryptid.UI
             _bodyContainer.SetActive(!_isMinimized);
             _toggleLabel.text = _isMinimized ? "▲" : "▼";
 
-            // Hide panel background when minimized so only header remains
-            var rootImage = GetComponent<Image>() ?? transform.parent?.GetComponent<Image>();
+            // Resize the root panel: when minimized, shrink to header only
+            var rootRt = GetComponent<RectTransform>() ?? transform.parent?.GetComponent<RectTransform>();
+            if (rootRt != null)
+            {
+                if (_isMinimized)
+                {
+                    // Collapse to just the header height
+                    rootRt.anchorMin = new Vector2(1f, 1f);
+                    rootRt.anchorMax = new Vector2(1f, 1f);
+                    rootRt.pivot = new Vector2(1f, 1f);
+                    rootRt.anchoredPosition = new Vector2(-10f, -60f);
+                    rootRt.sizeDelta = new Vector2(PANEL_WIDTH, 34f);
+                }
+                else
+                {
+                    // Restore full height
+                    rootRt.anchorMin = new Vector2(1f, 0f);
+                    rootRt.anchorMax = new Vector2(1f, 1f);
+                    rootRt.pivot = new Vector2(1f, 0.5f);
+                    rootRt.anchoredPosition = new Vector2(-10f, 0f);
+                    rootRt.sizeDelta = new Vector2(PANEL_WIDTH, -130f);
+                }
+            }
+
+            // Toggle panel background visibility
+            var rootImage = GetComponent<Image>();
             if (rootImage != null)
                 rootImage.enabled = !_isMinimized;
 

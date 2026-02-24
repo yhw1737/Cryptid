@@ -194,10 +194,22 @@ namespace Cryptid.Network
                 fontSize: 32, color: UIFactory.Accent);
             _lobbyTitle.GetComponent<RectTransform>().sizeDelta = new Vector2(420, 45);
 
-            // IP text (host only)
-            _lobbyIpText = UIFactory.CreateTMP(root, "IpText", "",
-                fontSize: 16, color: new Color(0.7f, 0.7f, 0.7f));
-            _lobbyIpText.GetComponent<RectTransform>().sizeDelta = new Vector2(420, 22);
+            // IP text row (host only — Steam ID + copy button)
+            var ipRow = UIFactory.CreatePanel(root, "IpRow");
+            ipRow.sizeDelta = new Vector2(420, 28);
+            var ipLayout = UIFactory.AddHorizontalLayout(ipRow, spacing: 6,
+                padding: new RectOffset(0, 0, 0, 0),
+                childAlignment: TextAnchor.MiddleLeft);
+            ipLayout.childControlWidth = false;
+            ipLayout.childForceExpandWidth = false;
+
+            _lobbyIpText = UIFactory.CreateTMP(ipRow, "IpText", "",
+                fontSize: 16, color: new Color(0.85f, 0.85f, 0.55f));
+            _lobbyIpText.GetComponent<RectTransform>().sizeDelta = new Vector2(330, 26);
+
+            var copyBtn = UIFactory.CreateButton(ipRow, "CopyBtn",
+                L.Get("copy"), 80, 26, new Color(0.25f, 0.45f, 0.65f), fontSize: 14);
+            copyBtn.onClick.AddListener(CopySteamIdToClipboard);
 
             // Player count
             _lobbyCountText = UIFactory.CreateTMP(root, "CountText",
@@ -292,6 +304,17 @@ namespace Cryptid.Network
             rt.anchorMax = new Vector2(1f, 1f);
             rt.pivot = new Vector2(1f, 1f);
             rt.anchoredPosition = new Vector2(-12f, -12f);
+        }
+
+        /// <summary>Copies the host's Steam ID to the system clipboard.</summary>
+        private void CopySteamIdToClipboard()
+        {
+            if (SteamManager.Initialized)
+            {
+                string steamId = SteamManager.MySteamId.ToString();
+                GUIUtility.systemCopyBuffer = steamId;
+                Debug.Log($"[ConnectionManager] Copied Steam ID to clipboard: {steamId}");
+            }
         }
 
         private void ShowSettings()
@@ -446,7 +469,8 @@ namespace Cryptid.Network
             UIAnimator.ShowPanel(_lobbyPanel);
             _lobbyTitle.text = L.Get("lobby_host");
             _startButton.gameObject.SetActive(true);
-            _lobbyIpText.gameObject.SetActive(true);
+            // Show Steam ID row (parent of _lobbyIpText)
+            _lobbyIpText.transform.parent.gameObject.SetActive(true);
             _lobbyIpText.text = SteamManager.Initialized
                 ? $"Steam ID: {SteamManager.MySteamId}" : "Steam ID: (unavailable)";
             _nicknameInput.text = SteamManager.Initialized
@@ -580,7 +604,7 @@ namespace Cryptid.Network
             _joinPanel.SetActive(false);
             UIAnimator.ShowPanel(_lobbyPanel);
             _startButton.gameObject.SetActive(false);
-            _lobbyIpText.gameObject.SetActive(false);
+            _lobbyIpText.transform.parent.gameObject.SetActive(false);
             _lobbyTitle.text = L.Get("lobby");
 
             int idx = _networkGameManager.LocalPlayerIndex;
@@ -666,14 +690,38 @@ namespace Cryptid.Network
             go.AddComponent<VivoxManager>();
         }
 
+        // Local mute state fallback (for visual feedback when Vivox is unavailable)
+        private bool _localMicMuted;
+        private bool _localSpeakerMuted;
+
         private void OnMicToggle()
         {
-            VivoxManager.Instance?.ToggleInputMute();
+            var vivox = VivoxManager.Instance;
+            if (vivox != null && vivox.IsReady)
+            {
+                vivox.ToggleInputMute();
+            }
+            else
+            {
+                // Vivox not ready — toggle local state for visual feedback
+                _localMicMuted = !_localMicMuted;
+                UpdateVoiceToggleVisuals(_localMicMuted, _localSpeakerMuted);
+            }
         }
 
         private void OnSpeakerToggle()
         {
-            VivoxManager.Instance?.ToggleOutputMute();
+            var vivox = VivoxManager.Instance;
+            if (vivox != null && vivox.IsReady)
+            {
+                vivox.ToggleOutputMute();
+            }
+            else
+            {
+                // Vivox not ready — toggle local state for visual feedback
+                _localSpeakerMuted = !_localSpeakerMuted;
+                UpdateVoiceToggleVisuals(_localMicMuted, _localSpeakerMuted);
+            }
         }
 
         private void UpdateVoiceToggleVisuals(bool inputMuted, bool outputMuted)
@@ -805,13 +853,13 @@ namespace Cryptid.Network
                 _lobbyTitle.text = L.Get("lobby_host");
                 _startButton.gameObject.SetActive(true);
                 _startButton.interactable = false;
-                _lobbyIpText.gameObject.SetActive(true);
+                _lobbyIpText.transform.parent.gameObject.SetActive(true);
             }
             else
             {
                 _lobbyTitle.text = L.Get("lobby");
                 _startButton.gameObject.SetActive(false);
-                _lobbyIpText.gameObject.SetActive(false);
+                _lobbyIpText.transform.parent.gameObject.SetActive(false);
             }
 
             // Re-subscribe to lobby updates

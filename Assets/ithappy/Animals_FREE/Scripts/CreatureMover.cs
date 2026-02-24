@@ -65,6 +65,9 @@ namespace ithappy.Animals_FREE
 
         private void Update()
         {
+            // Guard: CharacterController may have been destroyed by MapGenerator
+            if (m_Controller == null) return;
+
             m_Movement.Move(Time.deltaTime, in m_Axis, in m_Target, m_IsRun, m_IsMoving, out var animAxis, out var isAir);
             m_Animation.Animate(in animAxis, m_IsRun ? 1f : 0f, Time.deltaTime);
         }
@@ -94,6 +97,7 @@ namespace ithappy.Animals_FREE
 
         private void OnControllerColliderHit(ControllerColliderHit hit)
         {
+            if(m_Controller == null) return;
             if(hit.normal.y > m_Controller.stepOffset)
             {
                 m_Movement.SetSurface(hit.normal);

@@ -7,10 +7,10 @@ namespace Cryptid.Systems.Map
     /// <summary>
     /// Component attached to each spawned hex tile GameObject.
     /// Stores runtime data (coordinates, terrain, etc.) and handles
-    /// visual state changes (highlight, select).
+    /// visual state changes (highlight, select, outline).
     /// 
-    /// Selection is shown via a floating green square pyramid above the tile
-    /// that bobs up and down using a sine wave motion.
+    /// Hover shows a white outline ring around the tile.
+    /// Selection shows a green outline ring plus a floating inverted pyramid.
     /// 
     /// Created by MapGenerator during tile spawning.
     /// </summary>
@@ -38,7 +38,7 @@ namespace Cryptid.Systems.Map
         private bool _isSelected;
         private bool _isDimmed;
 
-        // Selection indicator: floating green square pyramid
+        // Selection indicator: floating green inverted pyramid
         private GameObject _selectIndicator;
         private static readonly Color IndicatorColor = new Color(0.2f, 0.85f, 0.3f, 0.9f);
         private const float INDICATOR_BASE_HEIGHT = 1.5f;
@@ -47,7 +47,16 @@ namespace Cryptid.Systems.Map
         private const float INDICATOR_SCALE = 0.3f;
         private const float INDICATOR_ROTATE_SPEED = 30f;
 
-        private static readonly Color HighlightTint = new Color(1f, 1f, 1f, 1f) * 1.3f;
+        // Outline ring rendered around the tile edge
+        private GameObject _outlineRing;
+        private MeshRenderer _outlineRenderer;
+        private Material _outlineMaterial;
+        private static readonly Color OutlineHoverColor  = new Color(1f, 1f, 1f, 0.85f);
+        private static readonly Color OutlineSelectColor = new Color(0.2f, 0.9f, 0.3f, 0.9f);
+        private const float OUTLINE_Y_OFFSET = 0.05f;
+        private const float OUTLINE_OUTER_SCALE = 1.08f;
+        private const float OUTLINE_INNER_SCALE = 0.92f;
+
         private const float DIM_FACTOR = 0.35f;
 
         // ---------------------------------------------------------
@@ -68,6 +77,8 @@ namespace Cryptid.Systems.Map
                 _baseMaterial = _renderer.material;
                 _baseColor = _baseMaterial.color;
             }
+
+            CreateOutlineRing();
         }
 
         // ---------------------------------------------------------
@@ -76,7 +87,7 @@ namespace Cryptid.Systems.Map
 
         /// <summary>
         /// Highlights this tile (mouse hover).
-        /// Brightens the base color slightly.
+        /// Shows a white outline ring around the tile edge.
         /// </summary>
         public void SetHighlight(bool highlighted)
         {
@@ -87,7 +98,7 @@ namespace Cryptid.Systems.Map
 
         /// <summary>
         /// Selects this tile (mouse click).
-        /// Shows a floating green square pyramid indicator above the tile.
+        /// Shows a green outline ring and a floating inverted pyramid indicator.
         /// </summary>
         public void SetSelected(bool selected)
         {
@@ -123,15 +134,85 @@ namespace Cryptid.Systems.Map
                 _selectIndicator.transform.localPosition = new Vector3(0f, y, 0f);
 
                 // Slow rotation
-                _selectIndicator.transform.Rotate(Vector3.up, INDICATOR_ROTATE_SPEED * Time.deltaTime, Space.Self);
+                _selectIndicator.transform.Rotate(Vector3.up,
+                    INDICATOR_ROTATE_SPEED * Time.deltaTime, Space.Self);
             }
         }
+
+        // ---------------------------------------------------------
+        // Outline Ring
+        // ---------------------------------------------------------
+
+        /// <summary>
+        /// Creates a hex-shaped outline ring mesh that sits on the tile surface.
+        /// Hidden by default, shown in white (hover) or green (select).
+        /// </summary>
+        private void CreateOutlineRing()
+        {
+            _outlineRing = new GameObject("OutlineRing");
+            _outlineRing.transform.SetParent(transform, false);
+            _outlineRing.transform.localPosition = new Vector3(0f, OUTLINE_Y_OFFSET, 0f);
+
+            var mf = _outlineRing.AddComponent<MeshFilter>();
+            mf.mesh = CreateHexRingMesh();
+
+            _outlineRenderer = _outlineRing.AddComponent<MeshRenderer>();
+            _outlineMaterial = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
+            _outlineMaterial.color = OutlineHoverColor;
+            _outlineRenderer.material = _outlineMaterial;
+            _outlineRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            _outlineRenderer.receiveShadows = false;
+
+            _outlineRing.SetActive(false);
+        }
+
+        /// <summary>
+        /// Generates a flat hexagonal ring mesh (outer hex - inner hex).
+        /// The ring width conveys the outline thickness.
+        /// </summary>
+        private static Mesh CreateHexRingMesh()
+        {
+            const int segments = 6;
+            var verts = new Vector3[segments * 4];
+            var tris  = new int[segments * 6];
+
+            for (int i = 0; i < segments; i++)
+            {
+                float a0 = Mathf.Deg2Rad * (60f * i - 30f);
+                float a1 = Mathf.Deg2Rad * (60f * (i + 1) - 30f);
+
+                // Each quad: outer0, outer1, inner1, inner0
+                int vi = i * 4;
+                verts[vi + 0] = new Vector3(Mathf.Cos(a0) * OUTLINE_OUTER_SCALE, 0f,
+                                            Mathf.Sin(a0) * OUTLINE_OUTER_SCALE);
+                verts[vi + 1] = new Vector3(Mathf.Cos(a1) * OUTLINE_OUTER_SCALE, 0f,
+                                            Mathf.Sin(a1) * OUTLINE_OUTER_SCALE);
+                verts[vi + 2] = new Vector3(Mathf.Cos(a1) * OUTLINE_INNER_SCALE, 0f,
+                                            Mathf.Sin(a1) * OUTLINE_INNER_SCALE);
+                verts[vi + 3] = new Vector3(Mathf.Cos(a0) * OUTLINE_INNER_SCALE, 0f,
+                                            Mathf.Sin(a0) * OUTLINE_INNER_SCALE);
+
+                int ti = i * 6;
+                tris[ti + 0] = vi + 0; tris[ti + 1] = vi + 1; tris[ti + 2] = vi + 2;
+                tris[ti + 3] = vi + 0; tris[ti + 4] = vi + 2; tris[ti + 5] = vi + 3;
+            }
+
+            var mesh = new Mesh { name = "HexRing" };
+            mesh.vertices = verts;
+            mesh.triangles = tris;
+            mesh.RecalculateNormals();
+            mesh.RecalculateBounds();
+            return mesh;
+        }
+
+        // ---------------------------------------------------------
+        // Selection Indicator
+        // ---------------------------------------------------------
 
         private void CreateIndicator()
         {
             if (_selectIndicator != null) return;
 
-            // Create an inverted pyramid indicator above the tile (apex pointing down)
             _selectIndicator = new GameObject("SelectIndicator");
             _selectIndicator.transform.SetParent(transform, false);
             _selectIndicator.transform.localPosition = new Vector3(0f, INDICATOR_BASE_HEIGHT, 0f);
@@ -159,7 +240,6 @@ namespace Cryptid.Systems.Map
         /// <summary>Creates an inverted square pyramid mesh (역사각뿔). Apex points downward.</summary>
         private static Mesh CreateInvertedPyramidMesh()
         {
-            // 5 vertices: 4 top corners + 1 apex pointing down
             Vector3[] verts =
             {
                 new(-1f, 0f, -1f), // 0: top front-left
@@ -169,19 +249,13 @@ namespace Cryptid.Systems.Map
                 new( 0f, -1.5f, 0f) // 4: apex (pointing down)
             };
 
-            // 6 triangles: 4 sides + 2 for the square top
             int[] triangles =
             {
-                // Front face (winding reversed for outward normals)
-                0, 1, 4,
-                // Right face
-                1, 2, 4,
-                // Back face
-                2, 3, 4,
-                // Left face
-                3, 0, 4,
-                // Top cap (two triangles, facing up)
-                0, 2, 1,
+                0, 1, 4,  // Front
+                1, 2, 4,  // Right
+                2, 3, 4,  // Back
+                3, 0, 4,  // Left
+                0, 2, 1,  // Top cap
                 0, 3, 2
             };
 
@@ -193,15 +267,28 @@ namespace Cryptid.Systems.Map
             return mesh;
         }
 
+        // ---------------------------------------------------------
+        // Visual Update
+        // ---------------------------------------------------------
+
         private void UpdateVisual()
         {
             if (_baseMaterial == null) return;
 
-            if (_isHighlighted && !_isSelected)
+            // Outline ring visibility and colour
+            if (_outlineRing != null)
             {
-                _baseMaterial.color = _baseColor * HighlightTint;
+                bool showOutline = _isHighlighted || _isSelected;
+                _outlineRing.SetActive(showOutline);
+                if (showOutline && _outlineMaterial != null)
+                {
+                    _outlineMaterial.color = _isSelected
+                        ? OutlineSelectColor : OutlineHoverColor;
+                }
             }
-            else if (_isDimmed)
+
+            // Tile colour
+            if (_isDimmed)
             {
                 _baseMaterial.color = _baseColor * DIM_FACTOR;
             }
@@ -220,13 +307,14 @@ namespace Cryptid.Systems.Map
             _isSelected = false;
             _isDimmed = false;
             DestroyIndicator();
-            if (_baseMaterial != null)
-                _baseMaterial.color = _baseColor;
+            if (_outlineRing != null) _outlineRing.SetActive(false);
+            if (_baseMaterial != null) _baseMaterial.color = _baseColor;
         }
 
         private void OnDestroy()
         {
             DestroyIndicator();
+            if (_outlineRing != null) Destroy(_outlineRing);
         }
     }
 }

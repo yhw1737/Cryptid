@@ -495,6 +495,10 @@ namespace Cryptid.Network
             // Transition to Playing
             _gamePhase = GamePhase.Playing;
             OnGamePhaseChanged?.Invoke(_gamePhase);
+
+            // Switch BGM from lobby to in-game track
+            AudioManager.Instance?.PlayIngameBGM();
+
             SendToAllClients(NetMsg.GamePhaseChanged, w =>
             {
                 w.WriteValueSafe((byte)GamePhase.Playing);
@@ -1059,10 +1063,12 @@ namespace Cryptid.Network
             {
                 AutoPlacePenaltyCube(player);
             }
-            else
+            else if (phase != TurnPhase.TurnEnd)
             {
+                // Time ran out during regular turn — force into penalty phase, auto-place cube
                 _uiManager?.LogPanel?.AddEntry(player, L.Get("timer_expired"));
-                _turnManager.SkipTurn();
+                _turnManager.ForcePhase(TurnPhase.PenaltyPlacement);
+                AutoPlacePenaltyCube(player);
             }
         }
 

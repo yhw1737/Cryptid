@@ -375,6 +375,18 @@ namespace Cryptid.Systems.Turn
             EndTurn();
         }
 
+        /// <summary>
+        /// Forces the current phase to a specific value.
+        /// Used by timer expiration to transition into PenaltyPlacement
+        /// so that SubmitPenaltyCube will accept the call.
+        /// </summary>
+        public void ForcePhase(TurnPhase phase)
+        {
+            Debug.Log($"[TurnManager] Force phase: {_currentPhase} → {phase}");
+            _currentPhase = phase;
+            OnPhaseChanged?.Invoke(_currentPlayerIndex, phase);
+        }
+
         private void EndTurn()
         {
             SetPhase(TurnPhase.TurnEnd);

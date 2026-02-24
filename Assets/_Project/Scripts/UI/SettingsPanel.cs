@@ -10,9 +10,12 @@ using UnityEngine.UI;
 namespace Cryptid.UI
 {
     /// <summary>
-    /// Settings panel accessible from the mode selection screen.
-    /// Contains: game description, language toggle (KR/EN), resolution dropdown,
-    /// audio slider, and perspective toggle (orthographic/perspective).
+    /// Settings panel with 3 tabs: Main (메인), Audio (음향), Display (디스플레이).
+    /// Accessible from both the mode selection screen and in-game.
+    ///
+    /// Main:    language toggle, game description, back button.
+    /// Audio:   master/BGM/SFX volume sliders, input/output device selectors.
+    /// Display: resolution, fullscreen, perspective toggle.
     ///
     /// During gameplay, resolution controls are disabled; other settings remain accessible.
     /// Persists settings via <see cref="SettingsManager"/>.
@@ -22,25 +25,48 @@ namespace Cryptid.UI
         private RectTransform _root;
         private bool _isInGame;
 
-        // UI Elements
+        // ---------------------------------------------------------
+        // Tabs
+        // ---------------------------------------------------------
+
+        private enum Tab { Main, Audio, Display }
+        private Tab _activeTab = Tab.Main;
+
+        private Button _tabMainBtn;
+        private Button _tabAudioBtn;
+        private Button _tabDisplayBtn;
+        private TextMeshProUGUI _tabMainLabel;
+        private TextMeshProUGUI _tabAudioLabel;
+        private TextMeshProUGUI _tabDisplayLabel;
+
+        private GameObject _mainContent;
+        private GameObject _audioContent;
+        private GameObject _displayContent;
+
+        // ---------------------------------------------------------
+        // Main Tab UI
+        // ---------------------------------------------------------
+
         private TextMeshProUGUI _titleText;
         private TextMeshProUGUI _descriptionText;
         private TextMeshProUGUI _langLabel;
         private Button _langToggleBtn;
         private TextMeshProUGUI _langToggleLabel;
-        private TextMeshProUGUI _resLabel;
-        private Button _resPrevBtn;
-        private Button _resNextBtn;
-        private TextMeshProUGUI _resValueText;
-        private Button _fullscreenBtn;
-        private TextMeshProUGUI _fullscreenLabel;
-        private TextMeshProUGUI _audioLabel;
-        private Slider _audioSlider;
-        private TextMeshProUGUI _audioValueText;
-        private TextMeshProUGUI _perspLabel;
-        private Button _perspToggleBtn;
-        private TextMeshProUGUI _perspToggleLabel;
         private Button _backBtn;
+
+        // ---------------------------------------------------------
+        // Audio Tab UI
+        // ---------------------------------------------------------
+
+        private TextMeshProUGUI _masterLabel;
+        private Slider _masterSlider;
+        private TextMeshProUGUI _masterValueText;
+        private TextMeshProUGUI _bgmLabel;
+        private Slider _bgmSlider;
+        private TextMeshProUGUI _bgmValueText;
+        private TextMeshProUGUI _sfxLabel;
+        private Slider _sfxSlider;
+        private TextMeshProUGUI _sfxValueText;
 
         // Audio device UI
         private TextMeshProUGUI _inputDeviceLabel;
@@ -59,9 +85,27 @@ namespace Cryptid.UI
         private int _selectedInputIndex;
         private int _selectedOutputIndex;
 
+        // ---------------------------------------------------------
+        // Display Tab UI
+        // ---------------------------------------------------------
+
+        private TextMeshProUGUI _resLabel;
+        private Button _resPrevBtn;
+        private Button _resNextBtn;
+        private TextMeshProUGUI _resValueText;
+        private Button _fullscreenBtn;
+        private TextMeshProUGUI _fullscreenLabel;
+        private TextMeshProUGUI _perspLabel;
+        private Button _perspToggleBtn;
+        private TextMeshProUGUI _perspToggleLabel;
+
         // State
         private int _selectedResIndex;
         private bool _selectedFullscreen;
+
+        // Tab colours
+        private static readonly Color TabActive   = new Color(0.25f, 0.40f, 0.60f);
+        private static readonly Color TabInactive  = new Color(0.12f, 0.12f, 0.18f);
 
         // ---------------------------------------------------------
         // Construction
@@ -76,45 +120,235 @@ namespace Cryptid.UI
             root.anchorMin = new Vector2(0.5f, 0.5f);
             root.anchorMax = new Vector2(0.5f, 0.5f);
             root.pivot = new Vector2(0.5f, 0.5f);
-            root.sizeDelta = new Vector2(500, 820);
+            root.sizeDelta = new Vector2(500, 750);
             root.anchoredPosition = Vector2.zero;
 
-            UIFactory.AddVerticalLayout(root, spacing: 10,
-                padding: new RectOffset(25, 25, 20, 20),
+            UIFactory.AddVerticalLayout(root, spacing: 8,
+                padding: new RectOffset(20, 20, 15, 15),
                 childAlignment: TextAnchor.UpperCenter);
 
             // Title
             _titleText = UIFactory.CreateTMP(root, "Title",
-                L.Get("settings"), fontSize: 32, color: UIFactory.Accent);
-            _titleText.GetComponent<RectTransform>().sizeDelta = new Vector2(450, 40);
-
-            // Game Description
-            _descriptionText = UIFactory.CreateTMP(root, "Description",
-                L.Get("game_description"), fontSize: 15,
-                align: TextAlignmentOptions.TopLeft,
-                color: new Color(0.75f, 0.75f, 0.80f));
-            var descRT = _descriptionText.GetComponent<RectTransform>();
-            descRT.sizeDelta = new Vector2(450, 100);
-            _descriptionText.overflowMode = TextOverflowModes.Overflow;
-            _descriptionText.enableWordWrapping = true;
+                L.Get("settings"), fontSize: 30, color: UIFactory.Accent);
+            _titleText.GetComponent<RectTransform>().sizeDelta = new Vector2(460, 36);
 
             // Separator
             CreateSeparator(root);
 
-            // ── Language Toggle ──
-            var langRow = CreateRow(root, "LangRow");
+            // ── Tab Buttons Row ──
+            var tabRow = CreateRow(root, "TabRow");
+            tabRow.sizeDelta = new Vector2(460, 40);
+
+            _tabMainBtn = UIFactory.CreateButton(tabRow, "TabMain",
+                L.Get("tab_main"), 145, 36, TabActive, fontSize: 17);
+            _tabMainBtn.onClick.AddListener(() => SwitchTab(Tab.Main));
+            _tabMainLabel = _tabMainBtn.GetComponentInChildren<TextMeshProUGUI>();
+
+            _tabAudioBtn = UIFactory.CreateButton(tabRow, "TabAudio",
+                L.Get("tab_audio"), 145, 36, TabInactive, fontSize: 17);
+            _tabAudioBtn.onClick.AddListener(() => SwitchTab(Tab.Audio));
+            _tabAudioLabel = _tabAudioBtn.GetComponentInChildren<TextMeshProUGUI>();
+
+            _tabDisplayBtn = UIFactory.CreateButton(tabRow, "TabDisplay",
+                L.Get("tab_display"), 145, 36, TabInactive, fontSize: 17);
+            _tabDisplayBtn.onClick.AddListener(() => SwitchTab(Tab.Display));
+            _tabDisplayLabel = _tabDisplayBtn.GetComponentInChildren<TextMeshProUGUI>();
+
+            // ── Content Panels ──
+            BuildMainContent(root);
+            BuildAudioContent(root);
+            BuildDisplayContent(root);
+
+            // Separator
+            CreateSeparator(root);
+
+            // ── Back Button (always visible) ──
+            _backBtn = UIFactory.CreateButton(root, "BackBtn",
+                L.Get("settings_back"), 200, 45, new Color(0.6f, 0.2f, 0.2f));
+            _backBtn.onClick.AddListener(Hide);
+
+            // Initialize
+            InitResolutionIndex();
+            UpdateResolutionDisplay();
+            UpdateFullscreenDisplay();
+
+            SwitchTab(Tab.Main);
+            gameObject.SetActive(false);
+        }
+
+        // ---------------------------------------------------------
+        // Content: Main Tab
+        // ---------------------------------------------------------
+
+        private void BuildMainContent(RectTransform parent)
+        {
+            _mainContent = new GameObject("MainContent", typeof(RectTransform));
+            _mainContent.transform.SetParent(parent, false);
+            var rt = _mainContent.GetComponent<RectTransform>();
+            rt.sizeDelta = new Vector2(460, 420);
+            UIFactory.AddVerticalLayout(rt, spacing: 10,
+                padding: new RectOffset(5, 5, 10, 10),
+                childAlignment: TextAnchor.UpperCenter);
+
+            // Game Description
+            _descriptionText = UIFactory.CreateTMP(rt, "Description",
+                L.Get("game_description"), fontSize: 15,
+                align: TextAlignmentOptions.TopLeft,
+                color: new Color(0.75f, 0.75f, 0.80f));
+            var descRT = _descriptionText.GetComponent<RectTransform>();
+            descRT.sizeDelta = new Vector2(440, 130);
+            _descriptionText.overflowMode = TextOverflowModes.Overflow;
+            _descriptionText.enableWordWrapping = true;
+
+            CreateSeparator(rt);
+
+            // Language Toggle
+            var langRow = CreateRow(rt, "LangRow");
             _langLabel = UIFactory.CreateTMP(langRow, "LangLabel",
                 L.Get("settings_language"), fontSize: 18,
                 align: TextAlignmentOptions.MidlineLeft);
             _langLabel.GetComponent<RectTransform>().sizeDelta = new Vector2(180, 36);
 
             _langToggleBtn = UIFactory.CreateButton(langRow, "LangBtn",
-                GetLanguageLabel(), 220, 36, new Color(0.20f, 0.35f, 0.55f), fontSize: 18);
+                GetLanguageLabel(), 240, 36, new Color(0.20f, 0.35f, 0.55f), fontSize: 18);
             _langToggleBtn.onClick.AddListener(ToggleLanguage);
             _langToggleLabel = _langToggleBtn.GetComponentInChildren<TextMeshProUGUI>();
+        }
 
-            // ── Resolution ──
-            var resRow = CreateRow(root, "ResRow");
+        // ---------------------------------------------------------
+        // Content: Audio Tab
+        // ---------------------------------------------------------
+
+        private void BuildAudioContent(RectTransform parent)
+        {
+            _audioContent = new GameObject("AudioContent", typeof(RectTransform));
+            _audioContent.transform.SetParent(parent, false);
+            var rt = _audioContent.GetComponent<RectTransform>();
+            rt.sizeDelta = new Vector2(460, 420);
+            UIFactory.AddVerticalLayout(rt, spacing: 10,
+                padding: new RectOffset(5, 5, 10, 10),
+                childAlignment: TextAnchor.UpperCenter);
+
+            // Master Volume
+            _masterLabel = UIFactory.CreateTMP(rt, "MasterLabel",
+                L.Get("settings_master_volume"), fontSize: 17,
+                align: TextAlignmentOptions.MidlineLeft);
+            _masterLabel.GetComponent<RectTransform>().sizeDelta = new Vector2(440, 24);
+
+            var masterRow = CreateRow(rt, "MasterRow");
+            var masterSliderGo = new GameObject("MasterSlider", typeof(RectTransform));
+            masterSliderGo.transform.SetParent(masterRow, false);
+            masterSliderGo.GetComponent<RectTransform>().sizeDelta = new Vector2(360, 30);
+            _masterSlider = CreateSlider(masterSliderGo);
+            _masterSlider.value = AudioManager.Instance != null
+                ? AudioManager.Instance.MasterVolume : 1f;
+            _masterSlider.onValueChanged.AddListener(OnMasterVolumeChanged);
+            _masterValueText = UIFactory.CreateTMP(masterRow, "MasterVal",
+                Mathf.RoundToInt(_masterSlider.value * 100) + "%", fontSize: 16);
+            _masterValueText.GetComponent<RectTransform>().sizeDelta = new Vector2(55, 30);
+
+            // BGM Volume
+            _bgmLabel = UIFactory.CreateTMP(rt, "BgmLabel",
+                L.Get("settings_bgm_volume"), fontSize: 17,
+                align: TextAlignmentOptions.MidlineLeft);
+            _bgmLabel.GetComponent<RectTransform>().sizeDelta = new Vector2(440, 24);
+
+            var bgmRow = CreateRow(rt, "BgmRow");
+            var bgmSliderGo = new GameObject("BgmSlider", typeof(RectTransform));
+            bgmSliderGo.transform.SetParent(bgmRow, false);
+            bgmSliderGo.GetComponent<RectTransform>().sizeDelta = new Vector2(360, 30);
+            _bgmSlider = CreateSlider(bgmSliderGo);
+            _bgmSlider.value = AudioManager.Instance != null
+                ? AudioManager.Instance.BgmVolume : 0.3f;
+            _bgmSlider.onValueChanged.AddListener(OnBgmVolumeChanged);
+            _bgmValueText = UIFactory.CreateTMP(bgmRow, "BgmVal",
+                Mathf.RoundToInt(_bgmSlider.value * 100) + "%", fontSize: 16);
+            _bgmValueText.GetComponent<RectTransform>().sizeDelta = new Vector2(55, 30);
+
+            // UI/SFX Volume
+            _sfxLabel = UIFactory.CreateTMP(rt, "SfxLabel",
+                L.Get("settings_sfx_volume"), fontSize: 17,
+                align: TextAlignmentOptions.MidlineLeft);
+            _sfxLabel.GetComponent<RectTransform>().sizeDelta = new Vector2(440, 24);
+
+            var sfxRow = CreateRow(rt, "SfxRow");
+            var sfxSliderGo = new GameObject("SfxSlider", typeof(RectTransform));
+            sfxSliderGo.transform.SetParent(sfxRow, false);
+            sfxSliderGo.GetComponent<RectTransform>().sizeDelta = new Vector2(360, 30);
+            _sfxSlider = CreateSlider(sfxSliderGo);
+            _sfxSlider.value = AudioManager.Instance != null
+                ? AudioManager.Instance.SfxVolume : 0.7f;
+            _sfxSlider.onValueChanged.AddListener(OnSfxVolumeChanged);
+            _sfxValueText = UIFactory.CreateTMP(sfxRow, "SfxVal",
+                Mathf.RoundToInt(_sfxSlider.value * 100) + "%", fontSize: 16);
+            _sfxValueText.GetComponent<RectTransform>().sizeDelta = new Vector2(55, 30);
+
+            CreateSeparator(rt);
+
+            // Input Device (Microphone)
+            var inputDevRow = CreateRow(rt, "InputDevRow");
+            _inputDeviceLabel = UIFactory.CreateTMP(inputDevRow, "InputDevLabel",
+                L.Get("settings_input_device"), fontSize: 15,
+                align: TextAlignmentOptions.MidlineLeft);
+            _inputDeviceLabel.GetComponent<RectTransform>().sizeDelta = new Vector2(110, 30);
+
+            _inputDevicePrev = UIFactory.CreateButton(inputDevRow, "InputPrev",
+                "◀", 28, 28, UIFactory.ButtonNormal, fontSize: 18);
+            _inputDevicePrev.onClick.AddListener(() => ChangeInputDevice(-1));
+
+            _inputDeviceText = UIFactory.CreateTMP(inputDevRow, "InputDevVal",
+                L.Get("default_device"), fontSize: 12,
+                align: TextAlignmentOptions.Center);
+            _inputDeviceText.GetComponent<RectTransform>().sizeDelta = new Vector2(200, 30);
+            _inputDeviceText.overflowMode = TextOverflowModes.Ellipsis;
+
+            _inputDeviceNext = UIFactory.CreateButton(inputDevRow, "InputNext",
+                "▶", 28, 28, UIFactory.ButtonNormal, fontSize: 18);
+            _inputDeviceNext.onClick.AddListener(() => ChangeInputDevice(1));
+
+            // Output Device (Speaker)
+            var outputDevRow = CreateRow(rt, "OutputDevRow");
+            _outputDeviceLabel = UIFactory.CreateTMP(outputDevRow, "OutputDevLabel",
+                L.Get("settings_output_device"), fontSize: 15,
+                align: TextAlignmentOptions.MidlineLeft);
+            _outputDeviceLabel.GetComponent<RectTransform>().sizeDelta = new Vector2(110, 30);
+
+            _outputDevicePrev = UIFactory.CreateButton(outputDevRow, "OutputPrev",
+                "◀", 28, 28, UIFactory.ButtonNormal, fontSize: 18);
+            _outputDevicePrev.onClick.AddListener(() => ChangeOutputDevice(-1));
+
+            _outputDeviceText = UIFactory.CreateTMP(outputDevRow, "OutputDevVal",
+                L.Get("default_device"), fontSize: 12,
+                align: TextAlignmentOptions.Center);
+            _outputDeviceText.GetComponent<RectTransform>().sizeDelta = new Vector2(200, 30);
+            _outputDeviceText.overflowMode = TextOverflowModes.Ellipsis;
+
+            _outputDeviceNext = UIFactory.CreateButton(outputDevRow, "OutputNext",
+                "▶", 28, 28, UIFactory.ButtonNormal, fontSize: 18);
+            _outputDeviceNext.onClick.AddListener(() => ChangeOutputDevice(1));
+
+            // Scan devices button
+            _scanDevicesBtn = UIFactory.CreateButton(rt, "ScanDevBtn",
+                L.Get("scan_devices"), 200, 28, new Color(0.25f, 0.35f, 0.50f), fontSize: 14);
+            _scanDevicesBtn.onClick.AddListener(ScanAudioDevices);
+        }
+
+        // ---------------------------------------------------------
+        // Content: Display Tab
+        // ---------------------------------------------------------
+
+        private void BuildDisplayContent(RectTransform parent)
+        {
+            _displayContent = new GameObject("DisplayContent", typeof(RectTransform));
+            _displayContent.transform.SetParent(parent, false);
+            var rt = _displayContent.GetComponent<RectTransform>();
+            rt.sizeDelta = new Vector2(460, 420);
+            UIFactory.AddVerticalLayout(rt, spacing: 12,
+                padding: new RectOffset(5, 5, 10, 10),
+                childAlignment: TextAnchor.UpperCenter);
+
+            // Resolution
+            var resRow = CreateRow(rt, "ResRow");
             _resLabel = UIFactory.CreateTMP(resRow, "ResLabel",
                 L.Get("settings_resolution"), fontSize: 18,
                 align: TextAlignmentOptions.MidlineLeft);
@@ -133,114 +367,63 @@ namespace Cryptid.UI
             _resNextBtn.onClick.AddListener(() => ChangeResolution(1));
 
             // Fullscreen toggle
-            var fsRow = CreateRow(root, "FSRow");
+            var fsRow = CreateRow(rt, "FSRow");
             var fsSpacer = new GameObject("Spacer", typeof(RectTransform));
             fsSpacer.transform.SetParent(fsRow, false);
             fsSpacer.GetComponent<RectTransform>().sizeDelta = new Vector2(180, 36);
 
             _fullscreenBtn = UIFactory.CreateButton(fsRow, "FullscreenBtn",
-                "", 220, 36, UIFactory.ButtonNormal, fontSize: 16);
+                "", 240, 36, UIFactory.ButtonNormal, fontSize: 16);
             _fullscreenBtn.onClick.AddListener(ToggleFullscreen);
             _fullscreenLabel = _fullscreenBtn.GetComponentInChildren<TextMeshProUGUI>();
 
-            // ── Audio Volume ──
-            var audioRow = CreateRow(root, "AudioRow");
-            _audioLabel = UIFactory.CreateTMP(audioRow, "AudioLabel",
-                L.Get("settings_audio"), fontSize: 18,
-                align: TextAlignmentOptions.MidlineLeft);
-            _audioLabel.GetComponent<RectTransform>().sizeDelta = new Vector2(180, 36);
+            CreateSeparator(rt);
 
-            // Slider container
-            var sliderGo = new GameObject("VolumeSlider", typeof(RectTransform));
-            sliderGo.transform.SetParent(audioRow, false);
-            var sliderRT = sliderGo.GetComponent<RectTransform>();
-            sliderRT.sizeDelta = new Vector2(175, 36);
-
-            _audioSlider = CreateSlider(sliderGo);
-            _audioSlider.value = SettingsManager.Volume;
-            _audioSlider.onValueChanged.AddListener(OnVolumeChanged);
-
-            _audioValueText = UIFactory.CreateTMP(audioRow, "AudioVal",
-                Mathf.RoundToInt(SettingsManager.Volume * 100) + "%", fontSize: 16);
-            _audioValueText.GetComponent<RectTransform>().sizeDelta = new Vector2(45, 36);
-
-            // ── Input Device (Microphone) ──
-            var inputDevRow = CreateRow(root, "InputDevRow");
-            _inputDeviceLabel = UIFactory.CreateTMP(inputDevRow, "InputDevLabel",
-                L.Get("settings_input_device"), fontSize: 16,
-                align: TextAlignmentOptions.MidlineLeft);
-            _inputDeviceLabel.GetComponent<RectTransform>().sizeDelta = new Vector2(120, 36);
-
-            _inputDevicePrev = UIFactory.CreateButton(inputDevRow, "InputPrev",
-                "◀", 30, 30, UIFactory.ButtonNormal, fontSize: 18);
-            _inputDevicePrev.onClick.AddListener(() => ChangeInputDevice(-1));
-
-            _inputDeviceText = UIFactory.CreateTMP(inputDevRow, "InputDevVal",
-                L.Get("default_device"), fontSize: 13,
-                align: TextAlignmentOptions.Center);
-            _inputDeviceText.GetComponent<RectTransform>().sizeDelta = new Vector2(180, 36);
-            _inputDeviceText.overflowMode = TextOverflowModes.Ellipsis;
-
-            _inputDeviceNext = UIFactory.CreateButton(inputDevRow, "InputNext",
-                "▶", 30, 30, UIFactory.ButtonNormal, fontSize: 18);
-            _inputDeviceNext.onClick.AddListener(() => ChangeInputDevice(1));
-
-            // ── Output Device (Speaker) ──
-            var outputDevRow = CreateRow(root, "OutputDevRow");
-            _outputDeviceLabel = UIFactory.CreateTMP(outputDevRow, "OutputDevLabel",
-                L.Get("settings_output_device"), fontSize: 16,
-                align: TextAlignmentOptions.MidlineLeft);
-            _outputDeviceLabel.GetComponent<RectTransform>().sizeDelta = new Vector2(120, 36);
-
-            _outputDevicePrev = UIFactory.CreateButton(outputDevRow, "OutputPrev",
-                "◀", 30, 30, UIFactory.ButtonNormal, fontSize: 18);
-            _outputDevicePrev.onClick.AddListener(() => ChangeOutputDevice(-1));
-
-            _outputDeviceText = UIFactory.CreateTMP(outputDevRow, "OutputDevVal",
-                L.Get("default_device"), fontSize: 13,
-                align: TextAlignmentOptions.Center);
-            _outputDeviceText.GetComponent<RectTransform>().sizeDelta = new Vector2(180, 36);
-            _outputDeviceText.overflowMode = TextOverflowModes.Ellipsis;
-
-            _outputDeviceNext = UIFactory.CreateButton(outputDevRow, "OutputNext",
-                "▶", 30, 30, UIFactory.ButtonNormal, fontSize: 18);
-            _outputDeviceNext.onClick.AddListener(() => ChangeOutputDevice(1));
-
-            // Scan devices button
-            _scanDevicesBtn = UIFactory.CreateButton(root, "ScanDevBtn",
-                L.Get("scan_devices"), 200, 30, new Color(0.25f, 0.35f, 0.50f), fontSize: 14);
-            _scanDevicesBtn.onClick.AddListener(ScanAudioDevices);
-
-            // ── Perspective Toggle ──
-            var perspRow = CreateRow(root, "PerspRow");
+            // Perspective Toggle
+            var perspRow = CreateRow(rt, "PerspRow");
             _perspLabel = UIFactory.CreateTMP(perspRow, "PerspLabel",
                 L.Get("settings_perspective"), fontSize: 18,
                 align: TextAlignmentOptions.MidlineLeft);
             _perspLabel.GetComponent<RectTransform>().sizeDelta = new Vector2(180, 36);
 
             _perspToggleBtn = UIFactory.CreateButton(perspRow, "PerspBtn",
-                GetPerspectiveLabel(), 220, 36,
+                GetPerspectiveLabel(), 240, 36,
                 SettingsManager.UsePerspective
                     ? new Color(0.20f, 0.55f, 0.35f)
                     : new Color(0.20f, 0.35f, 0.55f),
                 fontSize: 18);
             _perspToggleBtn.onClick.AddListener(TogglePerspective);
             _perspToggleLabel = _perspToggleBtn.GetComponentInChildren<TextMeshProUGUI>();
+        }
 
-            // Separator
-            CreateSeparator(root);
+        // ---------------------------------------------------------
+        // Tab Switching
+        // ---------------------------------------------------------
 
-            // ── Back Button ──
-            _backBtn = UIFactory.CreateButton(root, "BackBtn",
-                L.Get("settings_back"), 200, 45, new Color(0.6f, 0.2f, 0.2f));
-            _backBtn.onClick.AddListener(Hide);
+        private void SwitchTab(Tab tab)
+        {
+            _activeTab = tab;
 
-            // Initialize resolution index
-            InitResolutionIndex();
-            UpdateResolutionDisplay();
-            UpdateFullscreenDisplay();
+            _mainContent.SetActive(tab == Tab.Main);
+            _audioContent.SetActive(tab == Tab.Audio);
+            _displayContent.SetActive(tab == Tab.Display);
 
-            gameObject.SetActive(false);
+            SetTabButtonColor(_tabMainBtn, tab == Tab.Main);
+            SetTabButtonColor(_tabAudioBtn, tab == Tab.Audio);
+            SetTabButtonColor(_tabDisplayBtn, tab == Tab.Display);
+
+            if (tab == Tab.Audio)
+                ScanAudioDevices();
+        }
+
+        private static void SetTabButtonColor(Button btn, bool active)
+        {
+            var color = active ? TabActive : TabInactive;
+            var cb = btn.colors;
+            cb.normalColor = color;
+            cb.selectedColor = color;
+            cb.highlightedColor = active ? TabActive * 1.1f : TabInactive * 1.3f;
+            btn.colors = cb;
         }
 
         // ---------------------------------------------------------
@@ -254,19 +437,17 @@ namespace Cryptid.UI
             UIAnimator.ShowPanel(gameObject);
 
             // Disable resolution controls during gameplay
-            _resPrevBtn.interactable = !inGame;
-            _resNextBtn.interactable = !inGame;
-            _fullscreenBtn.interactable = !inGame;
+            if (_resPrevBtn != null) _resPrevBtn.interactable = !inGame;
+            if (_resNextBtn != null) _resNextBtn.interactable = !inGame;
+            if (_fullscreenBtn != null) _fullscreenBtn.interactable = !inGame;
 
             // Update resolution display with current value
             InitResolutionIndex();
             UpdateResolutionDisplay();
             UpdateFullscreenDisplay();
 
-            // Scan audio devices
-            ScanAudioDevices();
-
             RefreshLabels();
+            SwitchTab(_activeTab);
         }
 
         public void Hide()
@@ -289,6 +470,28 @@ namespace Cryptid.UI
 
         private static string GetLanguageLabel() =>
             SettingsManager.Language == L.Language.KR ? "한국어 / Korean" : "English / 영어";
+
+        // ---------------------------------------------------------
+        // Audio Volume
+        // ---------------------------------------------------------
+
+        private void OnMasterVolumeChanged(float value)
+        {
+            if (AudioManager.Instance != null) AudioManager.Instance.MasterVolume = value;
+            _masterValueText.text = Mathf.RoundToInt(value * 100) + "%";
+        }
+
+        private void OnBgmVolumeChanged(float value)
+        {
+            if (AudioManager.Instance != null) AudioManager.Instance.BgmVolume = value;
+            _bgmValueText.text = Mathf.RoundToInt(value * 100) + "%";
+        }
+
+        private void OnSfxVolumeChanged(float value)
+        {
+            if (AudioManager.Instance != null) AudioManager.Instance.SfxVolume = value;
+            _sfxValueText.text = Mathf.RoundToInt(value * 100) + "%";
+        }
 
         // ---------------------------------------------------------
         // Resolution
@@ -338,22 +541,14 @@ namespace Cryptid.UI
         private void UpdateFullscreenDisplay()
         {
             if (_fullscreenLabel == null) return;
-            _fullscreenLabel.text = _selectedFullscreen ? "☐ Windowed → ☑ Fullscreen" : "☑ Windowed → ☐ Fullscreen";
+            _fullscreenLabel.text = _selectedFullscreen
+                ? "☐ Windowed → ☑ Fullscreen"
+                : "☑ Windowed → ☐ Fullscreen";
             var cb = _fullscreenBtn.colors;
             cb.normalColor = _selectedFullscreen
                 ? new Color(0.20f, 0.55f, 0.35f) : UIFactory.ButtonNormal;
             cb.selectedColor = cb.normalColor;
             _fullscreenBtn.colors = cb;
-        }
-
-        // ---------------------------------------------------------
-        // Audio
-        // ---------------------------------------------------------
-
-        private void OnVolumeChanged(float value)
-        {
-            SettingsManager.Volume = value;
-            _audioValueText.text = Mathf.RoundToInt(value * 100) + "%";
         }
 
         // ---------------------------------------------------------
@@ -365,15 +560,14 @@ namespace Cryptid.UI
             var vivox = VivoxManager.Instance;
             if (vivox == null || !vivox.IsReady)
             {
-                _inputDeviceText.text = L.Get("vivox_not_ready");
-                _outputDeviceText.text = L.Get("vivox_not_ready");
+                if (_inputDeviceText != null) _inputDeviceText.text = L.Get("vivox_not_ready");
+                if (_outputDeviceText != null) _outputDeviceText.text = L.Get("vivox_not_ready");
                 return;
             }
 
             _inputDevices = vivox.GetInputDevices()?.ToList() ?? new List<VivoxInputDevice>();
             _outputDevices = vivox.GetOutputDevices()?.ToList() ?? new List<VivoxOutputDevice>();
 
-            // Find current active device index
             var activeInput = vivox.GetActiveInputDevice();
             _selectedInputIndex = 0;
             if (activeInput != null)
@@ -409,7 +603,8 @@ namespace Cryptid.UI
         private void ChangeInputDevice(int dir)
         {
             if (_inputDevices.Count == 0) { ScanAudioDevices(); return; }
-            _selectedInputIndex = Mathf.Clamp(_selectedInputIndex + dir, 0, _inputDevices.Count - 1);
+            _selectedInputIndex = Mathf.Clamp(
+                _selectedInputIndex + dir, 0, _inputDevices.Count - 1);
             UpdateInputDeviceDisplay();
             _ = VivoxManager.Instance?.SetInputDeviceAsync(_inputDevices[_selectedInputIndex]);
         }
@@ -417,7 +612,8 @@ namespace Cryptid.UI
         private void ChangeOutputDevice(int dir)
         {
             if (_outputDevices.Count == 0) { ScanAudioDevices(); return; }
-            _selectedOutputIndex = Mathf.Clamp(_selectedOutputIndex + dir, 0, _outputDevices.Count - 1);
+            _selectedOutputIndex = Mathf.Clamp(
+                _selectedOutputIndex + dir, 0, _outputDevices.Count - 1);
             UpdateOutputDeviceDisplay();
             _ = VivoxManager.Instance?.SetOutputDeviceAsync(_outputDevices[_selectedOutputIndex]);
         }
@@ -455,7 +651,8 @@ namespace Cryptid.UI
         }
 
         private static string GetPerspectiveLabel() =>
-            SettingsManager.UsePerspective ? L.Get("settings_persp") : L.Get("settings_ortho");
+            SettingsManager.UsePerspective
+                ? L.Get("settings_persp") : L.Get("settings_ortho");
 
         // ---------------------------------------------------------
         // Refresh All Labels (after language change)
@@ -466,14 +663,24 @@ namespace Cryptid.UI
             _titleText.text = L.Get("settings");
             _descriptionText.text = L.Get("game_description");
             _langLabel.text = L.Get("settings_language");
-            _resLabel.text = L.Get("settings_resolution");
-            _audioLabel.text = L.Get("settings_audio");
+            _tabMainLabel.text = L.Get("tab_main");
+            _tabAudioLabel.text = L.Get("tab_audio");
+            _tabDisplayLabel.text = L.Get("tab_display");
+
+            // Audio tab
+            _masterLabel.text = L.Get("settings_master_volume");
+            _bgmLabel.text = L.Get("settings_bgm_volume");
+            _sfxLabel.text = L.Get("settings_sfx_volume");
             _inputDeviceLabel.text = L.Get("settings_input_device");
             _outputDeviceLabel.text = L.Get("settings_output_device");
             _scanDevicesBtn.GetComponentInChildren<TextMeshProUGUI>().text =
                 L.Get("scan_devices");
+
+            // Display tab
+            _resLabel.text = L.Get("settings_resolution");
             _perspLabel.text = L.Get("settings_perspective");
             _perspToggleLabel.text = GetPerspectiveLabel();
+
             _backBtn.GetComponentInChildren<TextMeshProUGUI>().text = L.Get("settings_back");
         }
 
@@ -484,7 +691,7 @@ namespace Cryptid.UI
         private static RectTransform CreateRow(RectTransform parent, string name)
         {
             var row = UIFactory.CreatePanel(parent, name);
-            row.sizeDelta = new Vector2(450, 36);
+            row.sizeDelta = new Vector2(440, 36);
             UIFactory.AddHorizontalLayout(row, spacing: 8,
                 padding: new RectOffset(0, 0, 0, 0),
                 childAlignment: TextAnchor.MiddleLeft);
@@ -495,7 +702,7 @@ namespace Cryptid.UI
         {
             var sep = UIFactory.CreatePanel(parent, "Separator",
                 new Color(0.3f, 0.3f, 0.4f, 0.5f));
-            sep.sizeDelta = new Vector2(450, 2);
+            sep.sizeDelta = new Vector2(440, 2);
         }
 
         private static Slider CreateSlider(GameObject parent)

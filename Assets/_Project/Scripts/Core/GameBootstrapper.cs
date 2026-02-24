@@ -249,6 +249,8 @@ namespace Cryptid.Core
         {
             if (newPhase == GamePhase.Playing && _turnManager != null)
             {
+                // Switch BGM from lobby to in-game track
+                AudioManager.Instance?.PlayIngameBGM();
                 _turnManager.StartFirstTurn();
             }
         }
@@ -578,8 +580,11 @@ namespace Cryptid.Core
             }
             else
             {
-                // Time ran out during regular turn — penalty: auto-place cube + skip
+                // Time ran out during regular turn — penalty: force into penalty phase, auto-place cube + skip
                 _uiManager?.LogPanel?.AddEntry(player, L.Get("timer_expired"));
+
+                // Force transition to PenaltyPlacement so SubmitPenaltyCube succeeds
+                _turnManager.ForcePhase(TurnPhase.PenaltyPlacement);
                 AutoPlacePenaltyCube(player);
             }
         }

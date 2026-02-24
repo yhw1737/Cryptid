@@ -274,6 +274,10 @@ namespace Cryptid.UI
             {
                 _gameLogPanel.gameObject.SetActive(false);
             }
+
+            // Hide entire canvas during lobby to avoid duplicate settings button
+            if (_canvas != null)
+                _canvas.gameObject.SetActive(false);
         }
 
         /// <summary>Public version of ShowLobbyState for external callers (e.g. network lobby return).</summary>
@@ -302,6 +306,8 @@ namespace Cryptid.UI
                     break;
 
                 case GamePhase.Playing:
+                    // Re-enable canvas for gameplay
+                    if (_canvas != null) _canvas.gameObject.SetActive(true);
                     _turnIndicator.gameObject.SetActive(true);
                     _cluePanel.gameObject.SetActive(true);
                     _gameLogPanel.gameObject.SetActive(true);

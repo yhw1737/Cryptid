@@ -83,12 +83,12 @@ namespace Cryptid.UI
             // Voice toggle buttons (right side, icon-based)
             _micBtn = UIFactory.CreateImageButton(root, "MicToggle",
                 IconProvider.MicOn, 40, 36, new Color(0.20f, 0.55f, 0.35f));
-            _micBtn.onClick.AddListener(() => VivoxManager.Instance?.ToggleInputMute());
+            _micBtn.onClick.AddListener(OnMicToggle);
             _micIcon = _micBtn.transform.Find("Icon")?.GetComponent<Image>();
 
             _speakerBtn = UIFactory.CreateImageButton(root, "SpeakerToggle",
                 IconProvider.SpeakerOn, 40, 36, new Color(0.20f, 0.55f, 0.35f));
-            _speakerBtn.onClick.AddListener(() => VivoxManager.Instance?.ToggleOutputMute());
+            _speakerBtn.onClick.AddListener(OnSpeakerToggle);
             _speakerIcon = _speakerBtn.transform.Find("Icon")?.GetComponent<Image>();
 
             // Subscribe to mute changes
@@ -227,6 +227,41 @@ namespace Cryptid.UI
                 _entries[i].NameText.color = isActive
                     ? Color.white
                     : new Color(0.85f, 0.85f, 0.85f);
+            }
+        }
+
+        // ---------------------------------------------------------
+        // Voice Toggle Handlers (with fallback when Vivox unavailable)
+        // ---------------------------------------------------------
+
+        private bool _localMicMuted;
+        private bool _localSpeakerMuted;
+
+        private void OnMicToggle()
+        {
+            var vivox = VivoxManager.Instance;
+            if (vivox != null && vivox.IsReady)
+            {
+                vivox.ToggleInputMute();
+            }
+            else
+            {
+                _localMicMuted = !_localMicMuted;
+                UpdateVoiceButtonVisuals(_localMicMuted, _localSpeakerMuted);
+            }
+        }
+
+        private void OnSpeakerToggle()
+        {
+            var vivox = VivoxManager.Instance;
+            if (vivox != null && vivox.IsReady)
+            {
+                vivox.ToggleOutputMute();
+            }
+            else
+            {
+                _localSpeakerMuted = !_localSpeakerMuted;
+                UpdateVoiceButtonVisuals(_localMicMuted, _localSpeakerMuted);
             }
         }
 
