@@ -1,4 +1,6 @@
 using System;
+using Cryptid.Core;
+using DG.Tweening;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -52,7 +54,7 @@ namespace Cryptid.UI
             var titleContainer = UIFactory.CreatePanel(center, "TitleContainer");
             titleContainer.sizeDelta = new Vector2(440f, 50f);
             _titleText = UIFactory.CreateTMP(titleContainer, "Title",
-                "GAME OVER", 42, color: UIFactory.Accent);
+                L.Get("game_over"), 42, color: UIFactory.Accent);
 
             // Winner announcement
             var winnerContainer = UIFactory.CreatePanel(center, "WinnerContainer");
@@ -66,7 +68,7 @@ namespace Cryptid.UI
                 "", 18, color: new Color(0.7f, 0.7f, 0.7f));
 
             // Restart button
-            _restartBtn = UIFactory.CreateButton(center, "RestartBtn", "Play Again",
+            _restartBtn = UIFactory.CreateButton(center, "RestartBtn", L.Get("play_again"),
                 220, 50, new Color(0.18f, 0.55f, 0.34f), 24);
             _restartBtn.onClick.AddListener(() => OnRestartClicked?.Invoke());
 
@@ -81,16 +83,16 @@ namespace Cryptid.UI
         public void Show(int winnerIndex, string answerInfo)
         {
             var color = UIFactory.GetPlayerColor(winnerIndex);
-            _winnerText.text = $"Player {winnerIndex + 1} Wins!";
+            _winnerText.text = L.Format("player_wins", winnerIndex + 1);
             _winnerText.color = color;
             _detailText.text = answerInfo;
-            gameObject.SetActive(true);
+            UIAnimator.ShowPanel(gameObject);
         }
 
         /// <summary>Hides the panel.</summary>
         public void Hide()
         {
-            gameObject.SetActive(false);
+            UIAnimator.HidePanel(gameObject);
         }
     }
 }

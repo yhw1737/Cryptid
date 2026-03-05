@@ -51,12 +51,12 @@ namespace Cryptid.Systems.Gameplay
     public class TokenPlacer : MonoBehaviour
     {
         [Header("Token Dimensions")]
-        [Tooltip("Size of cube tokens")]
-        [SerializeField] private Vector3 _cubeSize = new Vector3(0.25f, 0.25f, 0.25f);
+        [Tooltip("Size of cube tokens (0.8x original, flattened)")]
+        [SerializeField] private Vector3 _cubeSize = new Vector3(0.20f, 0.12f, 0.20f);
 
-        [Tooltip("Disc radius and height")]
-        [SerializeField] private float _discRadius = 0.2f;
-        [SerializeField] private float _discHeight = 0.08f;
+        [Tooltip("Disc radius and height (0.8x original, flattened)")]
+        [SerializeField] private float _discRadius = 0.16f;
+        [SerializeField] private float _discHeight = 0.05f;
 
         [Header("Player Colors")]
         [SerializeField] private Color[] _playerColors = new Color[]
@@ -83,10 +83,10 @@ namespace Cryptid.Systems.Gameplay
 
         [Header("Layout")]
         [Tooltip("Vertical offset above the tile surface")]
-        [SerializeField] private float _baseYOffset = 0.15f;
+        [SerializeField] private float _baseYOffset = 0.10f;
 
         [Tooltip("Stack offset when multiple tokens on same tile")]
-        [SerializeField] private float _stackOffset = 0.3f;
+        [SerializeField] private float _stackOffset = 0.15f;
 
         // ---------------------------------------------------------
         // Runtime State
@@ -238,6 +238,26 @@ namespace Cryptid.Systems.Gameplay
         }
 
         /// <summary>
+        /// Removes all discs from a specific tile, keeping cubes intact.
+        /// Used when a search fails: cubes (denial) stay, discs (confirmation) are removed.
+        /// </summary>
+        public void RemoveDiscsAt(HexCoordinates coords)
+        {
+            if (!_tokensByTile.TryGetValue(coords, out var list)) return;
+
+            var discs = list.FindAll(t => t.Type == TokenType.Disc);
+            foreach (var disc in discs)
+            {
+                if (disc.Visual != null)
+                    AnimateRemoval(disc.Visual);
+                _allTokens.Remove(disc);
+                list.Remove(disc);
+            }
+
+            Debug.Log($"[TokenPlacer] Removed {discs.Count} disc(s) from {coords}.");
+        }
+
+        /// <summary>
         /// Removes all tokens from the board.
         /// </summary>
         [ContextMenu("Clear All Tokens")]
@@ -266,6 +286,65 @@ namespace Cryptid.Systems.Gameplay
         /// Returns all tokens placed on the board.
         /// </summary>
         public IReadOnlyList<TokenInfo> AllTokens => _allTokens;
+
+        // ---------------------------------------------------------
+        // Tile Validation (Spec 5.3.A)
+        // ---------------------------------------------------------
+
+        /// <summary>
+        /// Returns true if any cube exists on this tile.
+        /// Rule 1 (Cube Blocker): tiles with cubes are permanently dead.
+        /// No tokens can be placed and no interactions allowed.
+        /// </summary>
+        public bool HasAnyCube(HexCoordinates coords)
+        {
+            if (!_tokensByTile.TryGetValue(coords, out var list)) return false;
+            foreach (var token in list)
+            {
+                if (token.Type == TokenType.Cube) return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Returns true if the specified player already has any token on this tile.
+        /// Rule 2 (No Self-Stacking): can't place or interact where you already have a token.
+        /// </summary>
+        public bool HasPlayerToken(HexCoordinates coords, int playerIndex)
+        {
+            if (!_tokensByTile.TryGetValue(coords, out var list)) return false;
+            foreach (var token in list)
+            {
+                if (token.PlayerIndex == playerIndex) return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Returns true if the specified player has a cube specifically on this tile.
+        /// Used for search/penalty validation where discs should not block.
+        /// </summary>
+        public bool HasPlayerCube(HexCoordinates coords, int playerIndex)
+        {
+            if (!_tokensByTile.TryGetValue(coords, out var list)) return false;
+            foreach (var token in list)
+            {
+                if (token.PlayerIndex == playerIndex && token.Type == TokenType.Cube) return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Validates all 3 tile interaction rules from spec 5.3.A:
+        ///   1. Cube Blocker: no cubes on tile
+        ///   2. No Self-Stacking: player has no tokens on tile
+        ///   3. Discs are Stackable: other players' discs are OK (implicitly allowed)
+        /// </summary>
+        /// <returns>True if the tile is valid for this player to interact with.</returns>
+        public bool CanInteract(HexCoordinates coords, int playerIndex)
+        {
+            return !HasAnyCube(coords) && !HasPlayerToken(coords, playerIndex);
+        }
 
         // ---------------------------------------------------------
         // Visual Creation

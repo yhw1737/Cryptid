@@ -8,6 +8,18 @@
 # -----------------------------------------------
 @AGENT_RULES.md
 @DEVELOPMENT_SPEC.md
+@CONSOLE_ERRORS.md
+
+# -----------------------------------------------
+# Steam App ID (replace 480 with real App ID before shipping)
+# -----------------------------------------------
+steam_appid.txt
+
+# -----------------------------------------------
+# Unused Systems (kept locally for reference)
+# -----------------------------------------------
+Assets/_Project/Scripts/Systems/Gameplay/SimpleAIPlayer.cs
+Assets/_Project/Scripts/Systems/Gameplay/SimpleAIPlayer.cs.meta
 
 # -----------------------------------------------
 # Unity Generated

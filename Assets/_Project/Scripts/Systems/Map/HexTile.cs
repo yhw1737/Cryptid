@@ -7,7 +7,11 @@ namespace Cryptid.Systems.Map
     /// <summary>
     /// Component attached to each spawned hex tile GameObject.
     /// Stores runtime data (coordinates, terrain, etc.) and handles
-    /// visual state changes (highlight, select).
+    /// visual state changes (highlight, select, outline).
+    /// 
+    /// Hover brightens the tile color (tint).
+    /// Selection shows a floating inverted pyramid indicator.
+    /// Penalty placement shows a green outline ring on valid tiles.
     /// 
     /// Created by MapGenerator during tile spawning.
     /// </summary>
@@ -33,10 +37,31 @@ namespace Cryptid.Systems.Map
         private Color _baseColor;
         private bool _isHighlighted;
         private bool _isSelected;
+        private bool _isDimmed;
+        private bool _isPenaltyHighlighted;
 
-        [Header("Highlight Settings")]
-        private static readonly Color HighlightTint = new Color(1f, 1f, 1f, 1f) * 1.4f;
-        private static readonly Color SelectColor = new Color(1f, 0.9f, 0.3f);
+        // Highlight tint factor for hover
+        private const float HIGHLIGHT_TINT = 1.4f;
+
+        // Selection indicator: floating green inverted pyramid
+        private GameObject _selectIndicator;
+        private static readonly Color IndicatorColor = new Color(0.2f, 0.85f, 0.3f, 0.9f);
+        private const float INDICATOR_BASE_HEIGHT = 1.5f;
+        private const float INDICATOR_BOB_AMPLITUDE = 0.25f;
+        private const float INDICATOR_BOB_SPEED = 2f;
+        private const float INDICATOR_SCALE = 0.3f;
+        private const float INDICATOR_ROTATE_SPEED = 30f;
+
+        // Outline ring rendered around the tile edge (penalty placement only)
+        private GameObject _outlineRing;
+        private MeshRenderer _outlineRenderer;
+        private Material _outlineMaterial;
+        private static readonly Color OutlinePenaltyColor = new Color(0.2f, 0.9f, 0.3f, 0.9f);
+        private const float OUTLINE_Y_OFFSET = 0.05f;
+        private const float OUTLINE_OUTER_SCALE = 1.08f;
+        private const float OUTLINE_INNER_SCALE = 0.92f;
+
+        private const float DIM_FACTOR = 0.35f;
 
         // ---------------------------------------------------------
         // Initialization
@@ -56,6 +81,8 @@ namespace Cryptid.Systems.Map
                 _baseMaterial = _renderer.material;
                 _baseColor = _baseMaterial.color;
             }
+
+            CreateOutlineRing();
         }
 
         // ---------------------------------------------------------
@@ -64,7 +91,7 @@ namespace Cryptid.Systems.Map
 
         /// <summary>
         /// Highlights this tile (mouse hover).
-        /// Brightens the base color.
+        /// Brightens the tile color by a tint factor.
         /// </summary>
         public void SetHighlight(bool highlighted)
         {
@@ -75,26 +102,212 @@ namespace Cryptid.Systems.Map
 
         /// <summary>
         /// Selects this tile (mouse click).
-        /// Applies a distinct selection color.
+        /// Shows a floating inverted pyramid indicator above the tile.
         /// </summary>
         public void SetSelected(bool selected)
         {
             if (_isSelected == selected) return;
             _isSelected = selected;
+
+            if (_isSelected)
+                CreateIndicator();
+            else
+                DestroyIndicator();
+
             UpdateVisual();
         }
+
+        /// <summary>
+        /// Shows a green outline ring on this tile to indicate it is a
+        /// valid penalty cube placement target. Used only during PenaltyPlacement phase.
+        /// </summary>
+        public void SetPenaltyHighlight(bool active)
+        {
+            if (_isPenaltyHighlighted == active) return;
+            _isPenaltyHighlighted = active;
+            UpdateVisual();
+        }
+
+        /// <summary>
+        /// Dims this tile to indicate it is not a valid placement target.
+        /// Used during PenaltyPlacement phase on non-placeable tiles.
+        /// </summary>
+        public void SetDimmed(bool dimmed)
+        {
+            if (_isDimmed == dimmed) return;
+            _isDimmed = dimmed;
+            UpdateVisual();
+        }
+
+        private void Update()
+        {
+            if (_selectIndicator != null)
+            {
+                // Sine-wave bobbing
+                float y = INDICATOR_BASE_HEIGHT +
+                           Mathf.Sin(Time.time * INDICATOR_BOB_SPEED) * INDICATOR_BOB_AMPLITUDE;
+                _selectIndicator.transform.localPosition = new Vector3(0f, y, 0f);
+
+                // Slow rotation
+                _selectIndicator.transform.Rotate(Vector3.up,
+                    INDICATOR_ROTATE_SPEED * Time.deltaTime, Space.Self);
+            }
+        }
+
+        // ---------------------------------------------------------
+        // Outline Ring
+        // ---------------------------------------------------------
+
+        /// <summary>
+        /// Creates a hex-shaped outline ring mesh that sits on the tile surface.
+        /// Hidden by default, shown in white (hover) or green (select).
+        /// </summary>
+        private void CreateOutlineRing()
+        {
+            _outlineRing = new GameObject("OutlineRing");
+            _outlineRing.transform.SetParent(transform, false);
+            _outlineRing.transform.localPosition = new Vector3(0f, OUTLINE_Y_OFFSET, 0f);
+
+            var mf = _outlineRing.AddComponent<MeshFilter>();
+            mf.mesh = CreateHexRingMesh();
+
+            _outlineRenderer = _outlineRing.AddComponent<MeshRenderer>();
+            _outlineMaterial = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
+            _outlineMaterial.color = OutlinePenaltyColor;
+            _outlineRenderer.material = _outlineMaterial;
+            _outlineRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            _outlineRenderer.receiveShadows = false;
+
+            _outlineRing.SetActive(false);
+        }
+
+        /// <summary>
+        /// Generates a flat hexagonal ring mesh (outer hex - inner hex).
+        /// The ring width conveys the outline thickness.
+        /// </summary>
+        private static Mesh CreateHexRingMesh()
+        {
+            const int segments = 6;
+            var verts = new Vector3[segments * 4];
+            var tris  = new int[segments * 6];
+
+            for (int i = 0; i < segments; i++)
+            {
+                float a0 = Mathf.Deg2Rad * (60f * i - 30f);
+                float a1 = Mathf.Deg2Rad * (60f * (i + 1) - 30f);
+
+                // Each quad: outer0, outer1, inner1, inner0
+                int vi = i * 4;
+                verts[vi + 0] = new Vector3(Mathf.Cos(a0) * OUTLINE_OUTER_SCALE, 0f,
+                                            Mathf.Sin(a0) * OUTLINE_OUTER_SCALE);
+                verts[vi + 1] = new Vector3(Mathf.Cos(a1) * OUTLINE_OUTER_SCALE, 0f,
+                                            Mathf.Sin(a1) * OUTLINE_OUTER_SCALE);
+                verts[vi + 2] = new Vector3(Mathf.Cos(a1) * OUTLINE_INNER_SCALE, 0f,
+                                            Mathf.Sin(a1) * OUTLINE_INNER_SCALE);
+                verts[vi + 3] = new Vector3(Mathf.Cos(a0) * OUTLINE_INNER_SCALE, 0f,
+                                            Mathf.Sin(a0) * OUTLINE_INNER_SCALE);
+
+                int ti = i * 6;
+                tris[ti + 0] = vi + 0; tris[ti + 1] = vi + 1; tris[ti + 2] = vi + 2;
+                tris[ti + 3] = vi + 0; tris[ti + 4] = vi + 2; tris[ti + 5] = vi + 3;
+            }
+
+            var mesh = new Mesh { name = "HexRing" };
+            mesh.vertices = verts;
+            mesh.triangles = tris;
+            mesh.RecalculateNormals();
+            mesh.RecalculateBounds();
+            return mesh;
+        }
+
+        // ---------------------------------------------------------
+        // Selection Indicator
+        // ---------------------------------------------------------
+
+        private void CreateIndicator()
+        {
+            if (_selectIndicator != null) return;
+
+            _selectIndicator = new GameObject("SelectIndicator");
+            _selectIndicator.transform.SetParent(transform, false);
+            _selectIndicator.transform.localPosition = new Vector3(0f, INDICATOR_BASE_HEIGHT, 0f);
+            _selectIndicator.transform.localScale = Vector3.one * INDICATOR_SCALE;
+
+            var mf = _selectIndicator.AddComponent<MeshFilter>();
+            mf.mesh = CreateInvertedPyramidMesh();
+
+            var mr = _selectIndicator.AddComponent<MeshRenderer>();
+            var mat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+            mat.color = IndicatorColor;
+            mat.SetFloat("_Smoothness", 0.8f);
+            mr.material = mat;
+        }
+
+        private void DestroyIndicator()
+        {
+            if (_selectIndicator != null)
+            {
+                Destroy(_selectIndicator);
+                _selectIndicator = null;
+            }
+        }
+
+        /// <summary>Creates an inverted square pyramid mesh (역사각뿔). Apex points downward.</summary>
+        private static Mesh CreateInvertedPyramidMesh()
+        {
+            Vector3[] verts =
+            {
+                new(-1f, 0f, -1f), // 0: top front-left
+                new( 1f, 0f, -1f), // 1: top front-right
+                new( 1f, 0f,  1f), // 2: top back-right
+                new(-1f, 0f,  1f), // 3: top back-left
+                new( 0f, -1.5f, 0f) // 4: apex (pointing down)
+            };
+
+            int[] triangles =
+            {
+                0, 1, 4,  // Front
+                1, 2, 4,  // Right
+                2, 3, 4,  // Back
+                3, 0, 4,  // Left
+                0, 2, 1,  // Top cap
+                0, 3, 2
+            };
+
+            var mesh = new Mesh { name = "InvertedPyramid" };
+            mesh.vertices = verts;
+            mesh.triangles = triangles;
+            mesh.RecalculateNormals();
+            mesh.RecalculateBounds();
+            return mesh;
+        }
+
+        // ---------------------------------------------------------
+        // Visual Update
+        // ---------------------------------------------------------
 
         private void UpdateVisual()
         {
             if (_baseMaterial == null) return;
 
-            if (_isSelected)
+            // Outline ring: only shown for penalty highlight
+            if (_outlineRing != null)
             {
-                _baseMaterial.color = SelectColor;
+                _outlineRing.SetActive(_isPenaltyHighlighted);
+                if (_isPenaltyHighlighted && _outlineMaterial != null)
+                {
+                    _outlineMaterial.color = OutlinePenaltyColor;
+                }
+            }
+
+            // Tile colour: dimmed, highlighted (tint), or base
+            if (_isDimmed)
+            {
+                _baseMaterial.color = _baseColor * DIM_FACTOR;
             }
             else if (_isHighlighted)
             {
-                _baseMaterial.color = _baseColor * HighlightTint;
+                _baseMaterial.color = _baseColor * HIGHLIGHT_TINT;
             }
             else
             {
@@ -109,8 +322,17 @@ namespace Cryptid.Systems.Map
         {
             _isHighlighted = false;
             _isSelected = false;
-            if (_baseMaterial != null)
-                _baseMaterial.color = _baseColor;
+            _isDimmed = false;
+            _isPenaltyHighlighted = false;
+            DestroyIndicator();
+            if (_outlineRing != null) _outlineRing.SetActive(false);
+            if (_baseMaterial != null) _baseMaterial.color = _baseColor;
+        }
+
+        private void OnDestroy()
+        {
+            DestroyIndicator();
+            if (_outlineRing != null) Destroy(_outlineRing);
         }
     }
 }

@@ -1,6 +1,8 @@
 using System.Collections;
+using System.Collections.Generic;
 using Cryptid.Core;
 using Cryptid.Data;
+using Cryptid.Network;
 using Cryptid.Systems.Clue;
 using Cryptid.Systems.Gameplay;
 using Cryptid.Systems.Map;
@@ -59,13 +61,12 @@ namespace Cryptid.Core
 
         private GameStateMachine _fsm;
         private TurnManager _turnManager;
+        private TurnTimer _turnTimer;
         private PuzzleSetup _currentPuzzle;
         private PuzzleGenerator _puzzleGenerator;
-        private SimpleAIPlayer _aiPlayer;
         private LobbyState _lobbyState;
         private PlayingState _playingState;
         private GameOverState _gameOverState;
-        private bool _isAITurnInProgress;
 
         // ---------------------------------------------------------
         // Lifecycle
@@ -86,6 +87,13 @@ namespace Cryptid.Core
             if (_uiManager == null)
                 _uiManager = gameObject.AddComponent<GameUIManager>();
             GameService.Register(_uiManager);
+
+            // Initialize AudioManager (BGM starts automatically)
+            if (AudioManager.Instance == null)
+            {
+                var audioObj = new GameObject("[AudioManager]");
+                audioObj.AddComponent<AudioManager>();
+            }
 
             // Build FSM
             _fsm = new GameStateMachine();
@@ -116,6 +124,10 @@ namespace Cryptid.Core
             _uiManager.OnActionChosen += HandleUIActionChosen;
             _uiManager.OnRestartRequested += HandleRestart;
 
+            // Subscribe to chat input (local mode — just echo to log)
+            if (_uiManager.LogPanel != null)
+                _uiManager.LogPanel.OnChatMessageSent += HandleLocalChat;
+
             // Subscribe to tile clicks for turn actions
             if (_tileInteraction != null)
             {
@@ -131,7 +143,12 @@ namespace Cryptid.Core
         {
             _fsm.TransitionTo(GamePhase.Lobby);
 
-            if (_autoStart)
+            // If ConnectionManager exists, let it handle mode selection.
+            // Otherwise (backwards compat), auto-start if configured.
+            bool hasConnectionManager =
+                FindFirstObjectByType<Cryptid.Network.ConnectionManager>() != null;
+
+            if (!hasConnectionManager && _autoStart)
             {
                 _lobbyState.AddPlayer(); // Auto-join triggers Setup
             }
@@ -154,7 +171,6 @@ namespace Cryptid.Core
                 _uiManager.OnRestartRequested -= HandleRestart;
             }
 
-            _aiPlayer?.Dispose();
             GameService.ClearAll();
         }
 
@@ -172,7 +188,18 @@ namespace Cryptid.Core
             {
                 _mapGenerator.GenerateMap();
                 _mapGenerator.SpawnVisuals();
+
+                // Check if map generation failed after all retries
+                if (_mapGenerator.WorldMap == null || _mapGenerator.WorldMap.Count == 0)
+                {
+                    Debug.LogError("[GameBootstrapper] Map generation failed after all retries!");
+                    _uiManager.ShowError(L.Get("map_generation_failed"));
+                    return;
+                }
             }
+
+            // Step 1.5: Center camera on the generated map
+            CenterCameraOnMap();
 
             // Step 2: Generate puzzle
             _currentPuzzle = _puzzleGenerator.Generate(
@@ -188,24 +215,41 @@ namespace Cryptid.Core
             _turnManager = new TurnManager(_playerCount, _currentPuzzle);
             GameService.Register(_turnManager);
 
-            // Subscribe to turn events
+            // Bind UI FIRST so log entries appear before action handlers
+            // (GameBootstrapper's HandleQuestionAsked calls AutoRespond synchronously,
+            //  which chains into EndTurn → next turn. UI must log before that.)
+            _uiManager.BindGameplay(_turnManager, _currentPuzzle, _playerCount);
+
+            // Subscribe to turn events (after UI, so UI logs come first)
             _turnManager.OnTurnStarted += HandleTurnStarted;
             _turnManager.OnQuestionAsked += HandleQuestionAsked;
             _turnManager.OnResponseGiven += HandleResponseGiven;
             _turnManager.OnSearchPerformed += HandleSearchPerformed;
-            _turnManager.OnSearchPenalty += HandleSearchPenalty;
+            _turnManager.OnSearchDiscPlaced += HandleSearchDiscPlaced;
+            _turnManager.OnSearchVerification += HandleSearchVerification;
+            _turnManager.OnSearchPrepared += HandleSearchPrepared;
+            _turnManager.OnPenaltyCubePlaced += HandlePenaltyCubePlaced;
             _turnManager.OnGameWon += HandleGameWon;
 
-            // Bind UI to gameplay systems
-            _uiManager.BindGameplay(_turnManager, _currentPuzzle, _playerCount);
-
-            // Create AI player for single-player mode
-            _aiPlayer = new SimpleAIPlayer(_turnManager, _currentPuzzle,
-                _mapGenerator.WorldMap, _puzzleSeed >= 0 ? _puzzleSeed + 1 : (int?)null);
-            _aiPlayer.HumanPlayerIndex = 0;
-            _aiPlayer.OnAIActionReady += HandleAIAction;
+            // Create turn timer
+            _turnTimer = gameObject.AddComponent<TurnTimer>();
+            _turnTimer.OnTimerTick += HandleTimerTick;
+            _turnTimer.OnTimerExpired += HandleTimerExpired;
+            _turnManager.OnPhaseChanged += HandlePhaseChangedForTimer;
 
             Debug.Log("[GameBootstrapper] Setup complete. Puzzle ready.");
+        }
+
+        /// <summary>
+        /// Centers the RTS camera on the generated map.
+        /// </summary>
+        private void CenterCameraOnMap()
+        {
+            var cam = FindFirstObjectByType<Cryptid.Systems.RTSCameraController>();
+            if (cam != null && _mapGenerator.WorldMap != null)
+            {
+                cam.CenterOnMap(_mapGenerator.WorldMap);
+            }
         }
 
         // ---------------------------------------------------------
@@ -216,6 +260,8 @@ namespace Cryptid.Core
         {
             if (newPhase == GamePhase.Playing && _turnManager != null)
             {
+                // Switch BGM from lobby to in-game track
+                AudioManager.Instance?.PlayIngameBGM();
                 _turnManager.StartFirstTurn();
             }
         }
@@ -226,6 +272,7 @@ namespace Cryptid.Core
 
         private void HandleTurnStarted(int playerIndex)
         {
+            AudioManager.Instance?.PlayTurnStart();
             Debug.Log($"[GameBootstrapper] === Turn {_turnManager.TurnNumber} === " +
                      $"Player {playerIndex + 1} | Phase: {_turnManager.CurrentPhase} " +
                      $"| Press Q (question) or S (search)");
@@ -239,40 +286,92 @@ namespace Cryptid.Core
         {
             if (_fsm.CurrentPhase != GamePhase.Playing || _turnManager == null) return;
             if (tile == null) return;
-            // Block interaction during AI turns
-            if (_isAITurnInProgress) return;
-            if (_turnManager.CurrentPlayerIndex != 0) return; // Only human (P1) can click
+
+            var coords = tile.Coordinates;
+            int currentPlayer = _turnManager.CurrentPlayerIndex;
 
             switch (_turnManager.CurrentPhase)
             {
                 case TurnPhase.SelectTile:
-                    // Use UI-selected target if available, fallback to next player
+                    if (!ValidateTileInteraction(coords, currentPlayer)) return;
                     int targetPlayer = (_uiManager != null && _uiManager.SelectedTargetPlayer >= 0)
                         ? _uiManager.SelectedTargetPlayer
-                        : (_turnManager.CurrentPlayerIndex + 1) % _playerCount;
-                    _turnManager.SubmitQuestion(tile.Coordinates, targetPlayer);
+                        : (currentPlayer + 1) % _playerCount;
+                    _turnManager.SubmitQuestion(coords, targetPlayer);
                     break;
 
                 case TurnPhase.Search:
-                    _turnManager.SubmitSearch(tile.Coordinates);
+                    if (!ValidateTileInteraction(coords, currentPlayer)) return;
+                    _turnManager.SubmitSearch(coords, _mapGenerator.WorldMap);
+                    break;
+
+                case TurnPhase.PenaltyPlacement:
+                    if (!ValidateTileInteraction(coords, currentPlayer)) return;
+                    bool accepted = _turnManager.SubmitPenaltyCube(
+                        coords, _mapGenerator.WorldMap);
+                    if (!accepted && _uiManager?.LogPanel != null)
+                    {
+                        _uiManager.LogPanel.AddEntry(currentPlayer,
+                            "  ⚠ " + L.Get("warn_matches_clue"));
+                    }
                     break;
 
                 default:
-                    Debug.Log($"[GameBootstrapper] Tile clicked at {tile.Coordinates}, " +
+                    Debug.Log($"[GameBootstrapper] Tile clicked at {coords}, " +
                              $"but current phase is {_turnManager.CurrentPhase}. " +
                              $"Press Q or S first.");
                     break;
             }
         }
 
+        /// <summary>
+        /// Validates tile interaction per spec 5.3.A:
+        ///   1. Cube Blocker: no cubes on tile (permanently dead)
+        ///   2. No Self-Stacking: player has no existing tokens on tile
+        ///      (for Questions, only cubes block — discs are allowed)
+        ///   3. Discs are Stackable: other players' discs are OK (implicit)
+        /// Shows UI feedback when validation fails.
+        /// </summary>
+        private bool ValidateTileInteraction(HexCoordinates coords, int playerIndex)
+        {
+            if (_tokenPlacer == null) return true;
+
+            if (_tokenPlacer.HasAnyCube(coords))
+            {
+                Debug.Log($"[GameBootstrapper] Tile {coords} blocked — has cube (permanently dead).");
+                _uiManager?.LogPanel?.AddEntry(playerIndex,
+                    L.Get("warn_tile_has_cube"));
+                return false;
+            }
+
+            // For Questions (SelectTile), discs on the tile are fine.
+            // For Search and PenaltyPlacement, check full token presence.
+            bool isQuestion = _turnManager?.CurrentPhase == TurnPhase.SelectTile;
+            if (!isQuestion && _tokenPlacer.HasPlayerToken(coords, playerIndex))
+            {
+                Debug.Log($"[GameBootstrapper] Player {playerIndex + 1} already has a token at {coords}.");
+                _uiManager?.LogPanel?.AddEntry(playerIndex,
+                    L.Get("warn_already_token"));
+                return false;
+            }
+
+            return true;
+        }
+
         private void HandleQuestionAsked(int askingPlayer, int targetPlayer, HexCoordinates tile)
         {
+            AudioManager.Instance?.PlayQuestionAsk();
             // Auto-respond for now (single-player debug)
             _turnManager.AutoRespond(_mapGenerator.WorldMap);
         }
 
         private void HandleResponseGiven(int respondingPlayer, HexCoordinates tile, bool result)
         {
+            if (result)
+                AudioManager.Instance?.PlayResponseYes();
+            else
+                AudioManager.Instance?.PlayResponseNo();
+
             if (_tokenPlacer == null) return;
 
             // Place token: Disc if clue matches (yes), Cube if not (no)
@@ -282,36 +381,110 @@ namespace Cryptid.Core
 
         private void HandleSearchPerformed(int playerIndex, HexCoordinates tile, bool isCorrect)
         {
-            if (!isCorrect)
+            if (isCorrect)
+                AudioManager.Instance?.PlaySearchSuccess();
+            else
             {
-                Debug.Log($"[GameBootstrapper] Wrong search! Applying penalty...");
-                // Apply penalty: all other players reveal their clue result
-                _turnManager.ApplySearchPenalty(tile, playerIndex, _mapGenerator.WorldMap);
+                AudioManager.Instance?.PlaySearchFail();
+                Debug.Log($"[GameBootstrapper] Search failed! Player {playerIndex + 1} must place penalty cube.");
             }
         }
 
         /// <summary>
-        /// Handles penalty token placement after a failed search.
-        /// Each opponent places a disc (match) or cube (no match) on the searched tile.
+        /// Handles the searcher's initial disc placement at the start of a search.
         /// </summary>
-        private void HandleSearchPenalty(int respondingPlayer, HexCoordinates tile, bool clueMatches)
+        private void HandleSearchDiscPlaced(int playerIndex, HexCoordinates tile)
+        {
+            AudioManager.Instance?.PlayTokenPlace();
+            if (_tokenPlacer == null) return;
+            _tokenPlacer.PlaceTokenAt(tile, TokenType.Disc, playerIndex);
+        }
+
+        /// <summary>
+        /// Handles each verifier's response during clockwise search verification.
+        /// Places disc (YES) or cube (NO) for the verifying player.
+        /// </summary>
+        private void HandleSearchVerification(int verifier, HexCoordinates tile, bool result)
         {
             if (_tokenPlacer == null) return;
+            TokenType type = result ? TokenType.Disc : TokenType.Cube;
+            _tokenPlacer.PlaceTokenAt(tile, type, verifier);
+        }
 
-            TokenType tokenType = clueMatches ? TokenType.Disc : TokenType.Cube;
-            _tokenPlacer.PlaceTokenAt(tile, tokenType, respondingPlayer);
+        /// <summary>
+        /// Handles prepared search verification data.
+        /// Starts a coroutine to animate each verification step with delays.
+        /// </summary>
+        private void HandleSearchPrepared(int searcherIndex, HexCoordinates tile,
+            List<SearchVerificationStep> steps)
+        {
+            StartCoroutine(AnimateSearchVerification(searcherIndex, tile, steps));
+        }
+
+        /// <summary>
+        /// Coroutine that reveals search verification results one by one with delays.
+        /// After all steps are shown, cleans up discs if search failed and finalizes.
+        /// </summary>
+        private IEnumerator AnimateSearchVerification(int searcherIndex, HexCoordinates tile,
+            List<SearchVerificationStep> steps)
+        {
+            const float stepDelay = 1.0f;
+            bool searchFailed = false;
+
+            // Initial pause after searcher disc placement
+            yield return new WaitForSeconds(stepDelay);
+
+            foreach (var step in steps)
+            {
+                // Fire events so UI log and token placement happen
+                AudioManager.Instance?.PlayTokenPlace();
+                _turnManager.FireSearchVerification(step.VerifierIndex, tile, step.Result);
+
+                if (!step.Result)
+                {
+                    searchFailed = true;
+                    // Brief pause to show the cube before cleanup
+                    yield return new WaitForSeconds(stepDelay * 0.5f);
+                    break;
+                }
+
+                yield return new WaitForSeconds(stepDelay);
+            }
+
+            // If search failed, remove all discs from the tile (cubes stay)
+            if (searchFailed && _tokenPlacer != null)
+            {
+                _tokenPlacer.RemoveDiscsAt(tile);
+            }
+
+            yield return new WaitForSeconds(stepDelay * 0.5f);
+
+            // Finalize: transition to penalty or win
+            _turnManager.FinalizeSearch(tile, !searchFailed);
+        }
+
+        /// <summary>
+        /// Handles penalty cube placed after a failed search or question.
+        /// The active player places a cube on a tile where their own clue does NOT match.
+        /// </summary>
+        private void HandlePenaltyCubePlaced(int playerIndex, HexCoordinates tile)
+        {
+            AudioManager.Instance?.PlayPenalty();
+            if (_tokenPlacer == null) return;
+
+            _tokenPlacer.PlaceTokenAt(tile, TokenType.Cube, playerIndex);
 
             // Log to UI
             if (_uiManager?.LogPanel != null)
             {
-                string token = clueMatches ? "disc" : "cube";
-                _uiManager.LogPanel.AddEntry(respondingPlayer,
-                    $"  Penalty: P{respondingPlayer + 1} reveals {token}");
+                _uiManager.LogPanel.AddEntry(playerIndex,
+                    L.Format("log_penalty_placed", L.PlayerShort(playerIndex), tile));
             }
         }
 
         private void HandleGameWon(int winnerIndex)
         {
+            AudioManager.Instance?.PlayGameWin();
             _gameOverState.WinnerIndex = winnerIndex;
             _playingState.TriggerGameOver();
         }
@@ -321,8 +494,7 @@ namespace Cryptid.Core
         /// </summary>
         private void HandleUIActionChosen(PlayerAction action)
         {
-            if (_turnManager != null && _turnManager.CurrentPhase == TurnPhase.ChooseAction
-                && !_isAITurnInProgress && _turnManager.CurrentPlayerIndex == 0)
+            if (_turnManager != null && _turnManager.CurrentPhase == TurnPhase.ChooseAction)
             {
                 _turnManager.ChooseAction(action);
             }
@@ -330,74 +502,12 @@ namespace Cryptid.Core
 
         /// <summary>
         /// Handles the "Play Again" button from the GameOver screen.
-        /// Reloads the current scene.
+        /// Reloads the current scene for a fresh game.
         /// </summary>
         private void HandleRestart()
         {
-            _aiPlayer?.Dispose();
             GameService.ClearAll();
             SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
-        }
-
-        // ---------------------------------------------------------
-        // AI Player Integration
-        // ---------------------------------------------------------
-
-        /// <summary>
-        /// Handles the AI's decision. Executes the action with a short delay
-        /// so the human player can see what's happening.
-        /// </summary>
-        private void HandleAIAction(int playerIndex, PlayerAction action,
-            HexCoordinates tile, int targetPlayer)
-        {
-            if (_isAITurnInProgress) return;
-            StartCoroutine(ExecuteAITurnCoroutine(playerIndex, action, tile, targetPlayer));
-        }
-
-        /// <summary>
-        /// Coroutine that executes an AI turn with delays for visual readability.
-        /// </summary>
-        private IEnumerator ExecuteAITurnCoroutine(int playerIndex, PlayerAction action,
-            HexCoordinates tile, int targetPlayer)
-        {
-            _isAITurnInProgress = true;
-            float delay = _aiPlayer?.ActionDelay ?? 0.6f;
-
-            // Hide action panel during AI turns
-            // (the UI reacts to phase changes, but we disable buttons proactively)
-
-            // Wait before choosing action
-            yield return new WaitForSeconds(delay);
-
-            if (_turnManager == null || _turnManager.CurrentPlayerIndex != playerIndex)
-            {
-                _isAITurnInProgress = false;
-                yield break;
-            }
-
-            // Step 1: Choose action
-            _turnManager.ChooseAction(action);
-
-            // Wait before selecting tile
-            yield return new WaitForSeconds(delay);
-
-            if (_turnManager == null)
-            {
-                _isAITurnInProgress = false;
-                yield break;
-            }
-
-            // Step 2: Submit tile action
-            if (action == PlayerAction.Question)
-            {
-                _turnManager.SubmitQuestion(tile, targetPlayer);
-            }
-            else
-            {
-                _turnManager.SubmitSearch(tile);
-            }
-
-            _isAITurnInProgress = false;
         }
 
         // ---------------------------------------------------------
@@ -406,45 +516,8 @@ namespace Cryptid.Core
 
         private void HandleDebugInput()
         {
-            var kb = Keyboard.current;
-            if (kb == null) return;
-
-            // Enter → Start game from lobby
-            if (kb.enterKey.wasPressedThisFrame && _fsm.CurrentPhase == GamePhase.Lobby)
-            {
-                _lobbyState.AddPlayer();
-                return;
-            }
-
-            // Tab → Show state info
-            if (kb.tabKey.wasPressedThisFrame)
-            {
-                LogCurrentState();
-                return;
-            }
-
-            // Turn controls (only during Playing phase, human player only)
-            if (_fsm.CurrentPhase != GamePhase.Playing || _turnManager == null) return;
-            if (_isAITurnInProgress || _turnManager.CurrentPlayerIndex != 0) return;
-
-            // Q → Choose Question
-            if (kb.qKey.wasPressedThisFrame &&
-                _turnManager.CurrentPhase == TurnPhase.ChooseAction)
-            {
-                _turnManager.ChooseAction(PlayerAction.Question);
-                Debug.Log("[Debug] Select a tile (click) then press T to target player, " +
-                         "or the tile click will auto-target next player.");
-                return;
-            }
-
-            // S → Choose Search
-            if (kb.sKey.wasPressedThisFrame &&
-                _turnManager.CurrentPhase == TurnPhase.ChooseAction)
-            {
-                _turnManager.ChooseAction(PlayerAction.Search);
-                Debug.Log("[Debug] Click a tile to search.");
-                return;
-            }
+            // NOTE: All keyboard shortcuts (Enter, Q, S, Tab) removed.
+            // They conflict with chat input and trigger unintended actions.
         }
 
         private void LogCurrentState()
@@ -470,5 +543,222 @@ namespace Cryptid.Core
 
         /// <summary> The active turn manager. Null before Setup phase. </summary>
         public TurnManager TurnMgr => _turnManager;
+
+        /// <summary> The UI manager. </summary>
+        public GameUIManager UIManager => _uiManager;
+
+        // ---------------------------------------------------------
+        // Network Mode Support
+        // ---------------------------------------------------------
+
+        /// <summary>
+        /// Disables GameBootstrapper for network mode.
+        /// Unsubscribes from tile and UI events, disables Update loop.
+        /// Called by <c>ConnectionManager</c> when entering a network game.
+        /// </summary>
+        public void DisableForNetworkMode()
+        {
+            // Unsubscribe from tile clicks (NetworkGameManager will take over)
+            if (_tileInteraction != null)
+                _tileInteraction.OnTileSelected -= HandleTileClicked;
+
+            // Unsubscribe from UI events
+            if (_uiManager != null)
+            {
+                _uiManager.OnActionChosen -= HandleUIActionChosen;
+                _uiManager.OnRestartRequested -= HandleRestart;
+
+                // Unsubscribe local chat handler (NetworkGameManager handles chat in network mode)
+                if (_uiManager.LogPanel != null)
+                    _uiManager.LogPanel.OnChatMessageSent -= HandleLocalChat;
+            }
+
+            enabled = false;
+            Debug.Log("[GameBootstrapper] Disabled for network mode.");
+        }
+
+        /// <summary>
+        /// Starts the local game. Called by <c>ConnectionManager</c>
+        /// when the user selects "Local Game".
+        /// </summary>
+        public void StartLocalGame()
+        {
+            _lobbyState.AddPlayer();
+        }
+
+        // ---------------------------------------------------------
+        // Turn Timer
+        // ---------------------------------------------------------
+
+        private void HandlePhaseChangedForTimer(int playerIndex, TurnPhase phase)
+        {
+            if (_turnTimer == null) return;
+
+            // Clear dimming from previous phase
+            ClearTileDimming();
+
+            switch (phase)
+            {
+                case TurnPhase.ChooseAction:
+                case TurnPhase.SelectTile:
+                case TurnPhase.Search:
+                    _turnTimer.StartTurnTimer();
+                    break;
+
+                case TurnPhase.PenaltyPlacement:
+                    _turnTimer.StartPenaltyTimer();
+                    // Dim tiles that cannot receive a penalty cube
+                    ApplyPenaltyDimming(playerIndex);
+                    break;
+
+                case TurnPhase.SearchAnimating:
+                    // Pause timer during search animation
+                    _turnTimer.Stop();
+                    _uiManager?.TurnIndicator?.HideTimer();
+                    break;
+
+                default:
+                    _turnTimer.Stop();
+                    _uiManager?.TurnIndicator?.HideTimer();
+                    break;
+            }
+        }
+
+        private void HandleTimerTick(float remaining)
+        {
+            _uiManager?.TurnIndicator?.UpdateTimer(remaining);
+
+            // Play warning SFX at 5 seconds remaining
+            if (remaining <= 5f && remaining > 4.9f)
+                AudioManager.Instance?.PlayTimerWarning();
+        }
+
+        private void HandleTimerExpired()
+        {
+            if (_turnManager == null) return;
+
+            var phase = _turnManager.CurrentPhase;
+            int player = _turnManager.CurrentPlayerIndex;
+
+            _uiManager?.TurnIndicator?.HideTimer();
+
+            if (phase == TurnPhase.PenaltyPlacement)
+            {
+                // Auto-place penalty cube on a random valid tile
+                AutoPlacePenaltyCube(player);
+            }
+            else if (phase == TurnPhase.TurnEnd)
+            {
+                // Turn already ended, do nothing
+            }
+            else
+            {
+                // Time ran out during regular turn — penalty: force into penalty phase, auto-place cube + skip
+                _uiManager?.LogPanel?.AddEntry(player, L.Get("timer_expired"));
+
+                // Force transition to PenaltyPlacement so SubmitPenaltyCube succeeds
+                _turnManager.ForcePhase(TurnPhase.PenaltyPlacement);
+                AutoPlacePenaltyCube(player);
+            }
+        }
+
+        private void AutoPlacePenaltyCube(int playerIndex)
+        {
+            if (_currentPuzzle == null || _mapGenerator?.WorldMap == null) return;
+
+            var clue = _currentPuzzle.PlayerClues[playerIndex];
+            foreach (var kvp in _mapGenerator.WorldMap)
+            {
+                // Skip tiles that already have cubes or player tokens
+                if (_tokenPlacer != null &&
+                    (_tokenPlacer.HasAnyCube(kvp.Key) || _tokenPlacer.HasPlayerToken(kvp.Key, playerIndex)))
+                    continue;
+
+                if (!clue.Check(kvp.Value, _mapGenerator.WorldMap))
+                {
+                    // Found a valid tile (clue does NOT match)
+                    _uiManager?.LogPanel?.AddEntry(playerIndex, L.Get("timer_auto_penalty"));
+                    ClearTileDimming();
+                    _turnManager.SubmitPenaltyCube(kvp.Key, _mapGenerator.WorldMap);
+                    return;
+                }
+            }
+
+            // Fallback: skip turn if no valid tile found
+            _uiManager?.LogPanel?.AddEntry(playerIndex, L.Get("timer_auto_penalty"));
+            ClearTileDimming();
+            _turnManager.SkipTurn();
+        }
+
+        // ---------------------------------------------------------
+        // Penalty Tile Dimming
+        // ---------------------------------------------------------
+
+        /// <summary>
+        /// Dims invalid tiles and highlights valid tiles with outline ring
+        /// during PenaltyPlacement phase.
+        /// Valid penalty tiles: clue does NOT match AND no cube AND no player token.
+        /// </summary>
+        private void ApplyPenaltyDimming(int playerIndex)
+        {
+            if (_currentPuzzle == null || _mapGenerator?.WorldMap == null) return;
+
+            var clue = _currentPuzzle.PlayerClues[playerIndex];
+            bool hasAnyValid = false;
+
+            foreach (var kvp in _mapGenerator.WorldMap)
+            {
+                var hexTile = FindHexTile(kvp.Key);
+                if (hexTile == null) continue;
+
+                bool hasCube = _tokenPlacer != null && _tokenPlacer.HasAnyCube(kvp.Key);
+                bool hasToken = _tokenPlacer != null && _tokenPlacer.HasPlayerToken(kvp.Key, playerIndex);
+                bool clueMatches = clue.Check(kvp.Value, _mapGenerator.WorldMap);
+
+                // A tile is invalid for penalty if: clue matches it, has cube, or has player token
+                bool isInvalid = clueMatches || hasCube || hasToken;
+                hexTile.SetDimmed(isInvalid);
+                hexTile.SetPenaltyHighlight(!isInvalid);
+
+                if (!isInvalid) hasAnyValid = true;
+            }
+
+            // If no valid tiles, auto-skip
+            if (!hasAnyValid)
+            {
+                _uiManager?.LogPanel?.AddSystemMessage(L.Get("timer_auto_penalty"));
+                ClearTileDimming();
+                _turnManager.SkipTurn();
+            }
+        }
+
+        /// <summary>Clears dimming and penalty highlights from all tiles.</summary>
+        private void ClearTileDimming()
+        {
+            if (_mapGenerator?.WorldMap == null) return;
+
+            foreach (var kvp in _mapGenerator.WorldMap)
+            {
+                var hexTile = FindHexTile(kvp.Key);
+                if (hexTile == null) continue;
+                hexTile.SetDimmed(false);
+                hexTile.SetPenaltyHighlight(false);
+            }
+        }
+
+        /// <summary>Finds the HexTile component for a given coordinate.</summary>
+        private HexTile FindHexTile(HexCoordinates coords)
+        {
+            // MapGenerator stores spawned tiles by coordinate
+            return _mapGenerator.GetHexTile(coords);
+        }
+
+        /// <summary>Handles chat messages in local/single-player mode (echo to log).</summary>
+        private void HandleLocalChat(string message)
+        {
+            int currentPlayer = _turnManager?.CurrentPlayerIndex ?? 0;
+            string name = L.Format("player_default", currentPlayer + 1);
+            _uiManager?.LogPanel?.AddEntry(currentPlayer, $"[{name}]: {message}");
+        }
     }
 }

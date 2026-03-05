@@ -1,4 +1,5 @@
 using System;
+using Unity.Netcode;
 using UnityEngine;
 
 namespace Cryptid.Core
@@ -9,7 +10,7 @@ namespace Cryptid.Core
     /// Immutable value type for safe usage as dictionary keys and in collections.
     /// </summary>
     [Serializable]
-    public struct HexCoordinates : IEquatable<HexCoordinates>
+    public struct HexCoordinates : IEquatable<HexCoordinates>, INetworkSerializable
     {
         [SerializeField] private int _x;
         [SerializeField] private int _y;
@@ -261,5 +262,19 @@ namespace Cryptid.Core
         /// Zero origin coordinate.
         /// </summary>
         public static readonly HexCoordinates Zero = new HexCoordinates(0, 0, 0);
+
+        // ---------------------------------------------------------
+        // Network Serialization (NGO)
+        // ---------------------------------------------------------
+
+        /// <summary>
+        /// Serializes cube coordinates for Netcode for GameObjects.
+        /// </summary>
+        public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
+        {
+            serializer.SerializeValue(ref _x);
+            serializer.SerializeValue(ref _y);
+            serializer.SerializeValue(ref _z);
+        }
     }
 }

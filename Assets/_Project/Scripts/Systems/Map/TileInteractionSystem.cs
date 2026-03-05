@@ -1,6 +1,7 @@
 using System;
 using Cryptid.Core;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 using TMPro;
 
@@ -67,6 +68,19 @@ namespace Cryptid.Systems.Map
                 if (_mouse == null) return;
             }
 
+            // Skip tile interaction when pointer is over UI
+            if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject())
+            {
+                // Clear hover state so highlight doesn't stick
+                if (_currentHovered != null)
+                {
+                    _currentHovered.SetHighlight(false);
+                    _currentHovered = null;
+                    OnTileHovered?.Invoke(null);
+                }
+                return;
+            }
+
             HandleHover();
             HandleClick();
         }
@@ -82,8 +96,9 @@ namespace Cryptid.Systems.Map
 
             if (Physics.Raycast(ray, out RaycastHit hit, 100f, _tileLayerMask))
             {
-                // Try to get HexTile from hit object
-                if (hit.collider.TryGetComponent<HexTile>(out var tile))
+                // Try to get HexTile from hit object or its parent (structures are children)
+                var tile = hit.collider.GetComponentInParent<HexTile>();
+                if (tile != null)
                 {
                     if (tile != _currentHovered)
                     {

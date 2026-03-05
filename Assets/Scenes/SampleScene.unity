@@ -151,6 +151,7 @@ MonoBehaviour:
   _mapGenerator: {fileID: 148594030}
   _tokenPlacer: {fileID: 1284919991}
   _tileInteraction: {fileID: 209761992}
+  _uiManager: {fileID: 0}
   _playerCount: 3
   _puzzleSeed: -1
   _autoStart: 1
@@ -205,6 +206,7 @@ MonoBehaviour:
   _showCoordinates: 1
   _showPieceId: 0
   _colorByPiece: 0
+  _mapGenerator: {fileID: 0}
 --- !u!114 &148594030
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -217,6 +219,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 18fa244e22c43e64a86b9e331e802f5a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Cryptid.Systems.Map.MapGenerator
+  _useProcedural: 1
+  _proceduralConfig: {fileID: 11400000, guid: 4ae892e857da33142b67702f75811091, type: 2}
+  _mapSeed: -1
   _assemblyConfig: {fileID: 11400000, guid: 0f93456ac7da7bd428f33dc2317c6f55, type: 2}
   _visualConfig: {fileID: 0}
   _tileContainer: {fileID: 0}
@@ -373,13 +378,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 330585543}
   serializedVersion: 2
-  m_LocalRotation: {x: 0.7071068, y: 0, z: 0, w: 0.7071068}
+  m_LocalRotation: {x: 0.60876137, y: 0, z: 0, w: 0.7933534}
   m_LocalPosition: {x: 0, y: 15, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 90, y: 0, z: 0}
+  m_LocalEulerAnglesHint: {x: 75, y: 0, z: 0}
 --- !u!114 &330585547
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -436,66 +441,16 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0c3d1fa4ff4031c4cbf3c2f4d4e2a8fd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Cryptid.Systems.RTSCameraController
-  _panSpeed: 0.5
   _panSmoothing: 0.15
   _zoomSpeed: 1
   _zoomMin: 3
   _zoomMax: 50
   _zoomSmoothing: 0.1
---- !u!1 &361424352
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 361424354}
-  - component: {fileID: 361424353}
-  m_Layer: 0
-  m_Name: HexGridDebugger
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!114 &361424353
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 361424352}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 5da44d72b3629d943a6f6025097bae39, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::Cryptid.Core.HexGridDebugger
-  _gridRadius: 5
-  _hexOutlineColor: {r: 1, g: 1, b: 1, a: 1}
-  _originColor: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
-  _neighborHighlightColor: {r: 0, g: 1, b: 1, a: 1}
-  _labelPrefab: {fileID: 0}
-  _labelYOffset: 0.05
-  _labelFontSize: 3
-  _showNeighborsOfOrigin: 1
-  _showDistanceColors: 0
-  _spawnLabelsOnStart: 1
---- !u!4 &361424354
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 361424352}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: -0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  _orbitSpeedX: 0.3
+  _orbitSpeedY: 0.2
+  _orbitPitchMin: 15
+  _orbitPitchMax: 89
+  _orbitSmoothing: 0.15
 --- !u!1 &410087039
 GameObject:
   m_ObjectHideFlags: 0
@@ -655,18 +610,44 @@ MonoBehaviour:
   _mapGenerator: {fileID: 148594030}
   _playerCount: 3
   _seed: -1
-  _answerColor: {r: 1, g: 0.85, b: 0, a: 1}
-  _validColor: {r: 0.2, g: 0.9, b: 0.3, a: 1}
-  _invalidColor: {r: 0.15, g: 0.08, b: 0.08, a: 1}
+  _answerColor:
+    r: 1
+    g: 0.85
+    b: 0
+    a: 1
+  _validColor:
+    r: 0.2
+    g: 0.9
+    b: 0.3
+    a: 1
+  _invalidColor:
+    r: 0.15
+    g: 0.08
+    b: 0.08
+    a: 1
   _playerColors:
-  - {r: 0.3, g: 0.6, b: 1, a: 1}
-  - {r: 1, g: 0.4, b: 0.3, a: 1}
-  - {r: 0.4, g: 0.9, b: 0.4, a: 1}
-  - {r: 1, g: 0.8, b: 0.2, a: 1}
-  - {r: 0.8, g: 0.4, b: 0.9, a: 1}
-  _generateKey: 103
-  _clearKey: 99
-  _cycleViewKey: 118
+  - r: 0.3
+    g: 0.6
+    b: 1
+    a: 1
+  - r: 1
+    g: 0.4
+    b: 0.3
+    a: 1
+  - r: 0.4
+    g: 0.9
+    b: 0.4
+    a: 1
+  - r: 1
+    g: 0.8
+    b: 0.2
+    a: 1
+  - r: 0.8
+    g: 0.4
+    b: 0.9
+    a: 1
+  _isShowing: 0
+  _currentViewMode: 0
 --- !u!4 &591674359
 Transform:
   m_ObjectHideFlags: 0
@@ -763,6 +744,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Cryptid.Systems.Gameplay.TokenPlacementDebugger
   _tokenPlacer: {fileID: 1284919991}
   _tileInteraction: {fileID: 209761992}
+  _selectedTile: {fileID: 0}
 --- !u!114 &1284919991
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -805,7 +787,7 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1 &1323489643
+--- !u!1 &1578748172
 GameObject:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -813,45 +795,39 @@ GameObject:
   m_PrefabAsset: {fileID: 0}
   serializedVersion: 6
   m_Component:
-  - component: {fileID: 1323489645}
-  - component: {fileID: 1323489644}
+  - component: {fileID: 1578748174}
+  - component: {fileID: 1578748173}
   m_Layer: 0
-  m_Name: '[DEBUG] MapPiece Preview'
+  m_Name: ConnectionManager
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!114 &1323489644
+--- !u!114 &1578748173
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1323489643}
+  m_GameObject: {fileID: 1578748172}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: cd5ef28e25d505349a8360fd6585b3c3, type: 3}
+  m_Script: {fileID: 11500000, guid: faf6f8e4bdbe1da41b89eaa7af496345, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::Cryptid.Systems.Map.MapPieceDebugger
-  _mapPiece: {fileID: 11400000, guid: e91f7b0e23747194da169e9952caf5b1, type: 2}
-  _rotationSteps: 0
-  _useTerrainColors: 1
-  _defaultColor: {r: 1, g: 1, b: 1, a: 1}
-  _structureMarkerColor: {r: 1, g: 0, b: 0, a: 1}
-  _showLabelsInPlayMode: 1
-  _labelFontSize: 2
-  _labelYOffset: 0.05
---- !u!4 &1323489645
+  m_EditorClassIdentifier: Assembly-CSharp::Cryptid.Network.ConnectionManager
+  _bootstrapper: {fileID: 0}
+  _port: 7777
+--- !u!4 &1578748174
 Transform:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1323489643}
+  m_GameObject: {fileID: 1578748172}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalPosition: {x: -1.78125, y: 0, z: -0.39347}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -890,11 +866,24 @@ MonoBehaviour:
   _clueDefinitions:
   - {fileID: 11400000, guid: 18eab1fb10e8fd548aaf983ec39d2636, type: 2}
   - {fileID: 11400000, guid: b57d848b41fd4b043837d28d4a541c83, type: 2}
-  _validColor: {r: 0.2, g: 0.9, b: 0.3, a: 1}
-  _invalidColor: {r: 0.3, g: 0.1, b: 0.1, a: 1}
-  _solutionColor: {r: 1, g: 0.85, b: 0, a: 1}
+  _validColor:
+    r: 0.2
+    g: 0.9
+    b: 0.3
+    a: 1
+  _invalidColor:
+    r: 0.3
+    g: 0.1
+    b: 0.1
+    a: 1
+  _solutionColor:
+    r: 1
+    g: 0.85
+    b: 0
+    a: 1
   _showLabels: 1
   _spaceToRun: 1
+  _isShowingResults: 0
 --- !u!4 &1889586829
 Transform:
   m_ObjectHideFlags: 0
@@ -917,11 +906,10 @@ SceneRoots:
   - {fileID: 330585546}
   - {fileID: 410087041}
   - {fileID: 832575519}
-  - {fileID: 361424354}
-  - {fileID: 1323489645}
   - {fileID: 148594031}
   - {fileID: 209761993}
   - {fileID: 1889586829}
   - {fileID: 591674359}
   - {fileID: 1284919992}
   - {fileID: 29768305}
+  - {fileID: 1578748174}

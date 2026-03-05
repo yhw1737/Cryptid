@@ -1,5 +1,7 @@
 using System;
+using Cryptid.Core;
 using Cryptid.Systems.Turn;
+using DG.Tweening;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -52,12 +54,12 @@ namespace Cryptid.UI
             UIFactory.AddHorizontalLayout(btnRow, spacing: 20);
 
             // Question button (blue)
-            _questionBtn = UIFactory.CreateButton(btnRow, "QuestionBtn", "Question",
+            _questionBtn = UIFactory.CreateButton(btnRow, "QuestionBtn", L.Get("btn_question"),
                 190, 55, new Color(0.16f, 0.50f, 0.73f));
             _questionBtn.onClick.AddListener(() => OnActionClicked?.Invoke(PlayerAction.Question));
 
             // Search button (red)
-            _searchBtn = UIFactory.CreateButton(btnRow, "SearchBtn", "Search",
+            _searchBtn = UIFactory.CreateButton(btnRow, "SearchBtn", L.Get("btn_search"),
                 190, 55, new Color(0.75f, 0.22f, 0.17f));
             _searchBtn.onClick.AddListener(() => OnActionClicked?.Invoke(PlayerAction.Search));
         }
@@ -73,24 +75,32 @@ namespace Cryptid.UI
             {
                 case TurnPhase.ChooseAction:
                     _buttonContainer.SetActive(true);
-                    _instructionText.text = "Choose your action";
-                    gameObject.SetActive(true);
+                    _instructionText.text = L.Get("choose_action");
+                    _questionBtn.GetComponentInChildren<TextMeshProUGUI>().text = L.Get("btn_question");
+                    _searchBtn.GetComponentInChildren<TextMeshProUGUI>().text = L.Get("btn_search");
+                    UIAnimator.ShowPanel(gameObject);
                     break;
 
                 case TurnPhase.SelectTile:
                     _buttonContainer.SetActive(false);
-                    _instructionText.text = "Click a tile to ask about";
-                    gameObject.SetActive(true);
+                    _instructionText.text = L.Get("click_tile_question");
+                    UIAnimator.ShowPanel(gameObject);
                     break;
 
                 case TurnPhase.Search:
                     _buttonContainer.SetActive(false);
-                    _instructionText.text = "Click a tile to search for the Cryptid";
-                    gameObject.SetActive(true);
+                    _instructionText.text = L.Get("click_tile_search");
+                    UIAnimator.ShowPanel(gameObject);
+                    break;
+
+                case TurnPhase.PenaltyPlacement:
+                    _buttonContainer.SetActive(false);
+                    _instructionText.text = L.Get("place_penalty_msg");
+                    UIAnimator.ShowPanel(gameObject);
                     break;
 
                 default:
-                    gameObject.SetActive(false);
+                    UIAnimator.HidePanel(gameObject);
                     break;
             }
         }

@@ -16,7 +16,8 @@ namespace Cryptid.Systems.Clue
     {
         private readonly TerrainType _terrain;
 
-        public string Description => $"On {_terrain}";
+        public string Description => L.TerrainName(_terrain) +
+            (L.CurrentLanguage == L.Language.KR ? " 위" : "");
 
         public OnTerrainClue(TerrainType terrain)
         {
@@ -39,7 +40,9 @@ namespace Cryptid.Systems.Clue
         private readonly TerrainType _terrainA;
         private readonly TerrainType _terrainB;
 
-        public string Description => $"On {_terrainA} or {_terrainB}";
+        public string Description => L.CurrentLanguage == L.Language.KR
+            ? $"{L.TerrainName(_terrainA)} 또는 {L.TerrainName(_terrainB)} 위"
+            : $"On {L.TerrainName(_terrainA)} or {L.TerrainName(_terrainB)}";
 
         public OnTerrainPairClue(TerrainType terrainA, TerrainType terrainB)
         {
@@ -68,8 +71,12 @@ namespace Cryptid.Systems.Clue
         private readonly int _distance;
 
         public string Description => _distance == 0
-            ? $"On {_terrain}"
-            : $"Within {_distance} hex(es) of {_terrain}";
+            ? (L.CurrentLanguage == L.Language.KR
+                ? $"{L.TerrainName(_terrain)} 위"
+                : $"On {L.TerrainName(_terrain)}")
+            : (L.CurrentLanguage == L.Language.KR
+                ? $"{L.TerrainName(_terrain)}에서 {_distance}칸 이내"
+                : $"Within {_distance} hex(es) of {L.TerrainName(_terrain)}");
 
         public WithinDistanceOfTerrainClue(TerrainType terrain, int distance)
         {
@@ -105,8 +112,12 @@ namespace Cryptid.Systems.Clue
         private readonly int _distance;
 
         public string Description => _distance == 0
-            ? $"On {_structure}"
-            : $"Within {_distance} hex(es) of {_structure}";
+            ? (L.CurrentLanguage == L.Language.KR
+                ? $"{L.StructureName(_structure)} 위"
+                : $"On {L.StructureName(_structure)}")
+            : (L.CurrentLanguage == L.Language.KR
+                ? $"{L.StructureName(_structure)}에서 {_distance}칸 이내"
+                : $"Within {_distance} hex(es) of {L.StructureName(_structure)}");
 
         public WithinDistanceOfStructureClue(StructureType structure, int distance)
         {
@@ -141,8 +152,12 @@ namespace Cryptid.Systems.Clue
         private readonly int _distance;
 
         public string Description => _distance == 0
-            ? $"On {_animal} territory"
-            : $"Within {_distance} hex(es) of {_animal} territory";
+            ? (L.CurrentLanguage == L.Language.KR
+                ? $"{L.AnimalName(_animal)} 영역 위"
+                : $"On {L.AnimalName(_animal)} territory")
+            : (L.CurrentLanguage == L.Language.KR
+                ? $"{L.AnimalName(_animal)} 영역에서 {_distance}칸 이내"
+                : $"Within {_distance} hex(es) of {L.AnimalName(_animal)} territory");
 
         public WithinDistanceOfAnimalClue(AnimalType animal, int distance)
         {
@@ -180,7 +195,9 @@ namespace Cryptid.Systems.Clue
     {
         private readonly IClue _inner;
 
-        public string Description => $"NOT ({_inner.Description})";
+        public string Description => L.CurrentLanguage == L.Language.KR
+            ? $"{_inner.Description} 아님"
+            : $"NOT ({_inner.Description})";
 
         public NotClue(IClue inner)
         {
@@ -208,7 +225,9 @@ namespace Cryptid.Systems.Clue
         private readonly IClue _clueA;
         private readonly IClue _clueB;
 
-        public string Description => $"({_clueA.Description}) OR ({_clueB.Description})";
+        public string Description => L.CurrentLanguage == L.Language.KR
+            ? $"({_clueA.Description}) 또는 ({_clueB.Description})"
+            : $"({_clueA.Description}) OR ({_clueB.Description})";
 
         public OrClue(IClue clueA, IClue clueB)
         {
