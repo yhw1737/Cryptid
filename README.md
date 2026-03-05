@@ -4,15 +4,15 @@
 
 ---
 
-## 📌 프로젝트 개요
+## 📌 게임 소개
 
 | 항목 | 내용 |
 |---|---|
-| **장르** | 3D 멀티플레이어 추리 보드게임 (턴제) |
-| **엔진** | Unity 6 (6000.2.7f1) / URP |
+| **장르** | 추리 보드게임 (턴제) |
 | **플랫폼** | PC (Steam) |
 | **플레이어** | 2~5인 (로컬 / 온라인) |
-| **네트워크** | Netcode for GameObjects + Facepunch.Steamworks P2P |
+
+게임이 시작되면 헥사곤 타일로 이루어진 맵이 매 판마다 새롭게 생성됩니다. 각 플레이어는 크립티드가 숨어있을 수 있는 타일의 조건을 담은 **비밀 단서**를 하나씩 받고, 다른 플레이어와 질문을 주고받으며 모든 단서의 교집합이 되는 단 하나의 타일을 좁혀 나갑니다.
 
 ---
 
@@ -28,80 +28,14 @@
 
 ---
 
-## ✨ 주요 기능
+## ✨ 주요 특징
 
-- **절차적 맵 생성** — Perlin Noise 기반 지형(사막·숲·물·늪·산), 구조물(오두막·선돌), 동물(호랑이·사슴) 자동 배치
-- **논리 클루 엔진** — 맵을 역산하여 모든 플레이어의 단서 난이도가 균형 잡힌 시나리오를 자동 생성
-- **Steam P2P 멀티플레이** — 룸 코드 공유 방식으로 추가 서버 없이 친구와 플레이
-- **턴 타이머** — 제한 시간 초과 시 자동 패널티 큐브 배치
-- **로컬 멀티플레이** — 한 PC에서 2~5명 동시 플레이 지원 (핫시트 방식)
-- **다국어 지원** — 한국어 / English 실시간 전환
-
----
-
-## 🏗️ 기술 스택
-
-| 분류 | 라이브러리 / 패키지 |
-|---|---|
-| **네트워크** | Netcode for GameObjects 2.7.0, Facepunch.Steamworks |
-| **UI** | TextMeshPro, DOTween (HOTween v2) |
-| **비동기** | UniTask |
-| **직렬화** | Newtonsoft.Json |
-| **입력** | Unity Input System |
-| **렌더링** | Universal Render Pipeline (URP) 17.x |
-| **테스트** | ParrelSync (멀티인스턴스 테스트) |
-
----
-
-## 🗂️ 프로젝트 구조
-
-```
-Assets/_Project/
-├── Scripts/
-│   ├── Core/          # GameBootstrapper, GameService, FSM, Localization
-│   ├── Data/          # ScriptableObjects (MapConfig, ClueDefinitions)
-│   ├── Network/       # ConnectionManager, FacepunchTransport, NetworkGameManager
-│   ├── Systems/
-│   │   ├── Map/       # HexGrid, ProceduralMapBuilder, HexTile
-│   │   ├── Clue/      # ClueEngine, LogicSolver
-│   │   └── Turn/      # TurnManager, TurnTimer, PlayerAction
-│   └── UI/            # GameUIManager, Panels (GameOver, TileInfo, Log...)
-├── Prefabs/           # Map Tiles, Player Tokens, Structures
-└── ScriptableObjects/ # MapConfigs, ClueDefs
-```
-
----
-
-## 🚀 빌드 & 실행
-
-### 요구 환경
-
-- **Unity** 6000.2.7f1 이상
-- **Steam** 설치 및 실행 (멀티플레이 기능 사용 시)
-
-### 로컬 실행
-
-1. 저장소 클론 후 Unity Hub에서 프로젝트 열기
-2. `Assets/Scenes/` 에서 메인 씬 실행
-3. **로컬 게임** 선택 → 플레이어 수 지정 후 시작
-
-### 온라인 멀티플레이
-
-1. **호스트** 가 "호스트 게임" 선택 → 표시되는 룸 코드 공유
-2. **클라이언트** 가 "참가하기" 선택 → 룸 코드 입력 후 접속
-3. 모든 플레이어 준비 완료 후 호스트가 게임 시작
-
----
-
-## 🔖 브랜치 전략
-
-| 브랜치 | 용도 |
-|---|---|
-| `main` | 안정 릴리즈 |
-| `develop` | 통합 개발 |
-| `Feat/*` | 기능 개발 |
-| `Fix/*` | 버그 수정 |
-| `Docs/*` | 문서 업데이트 |
+- **매판 새로운 맵** — 지형(사막·숲·물·늪·산), 구조물(오두막·선돌), 동물(호랑이·사슴)이 매 게임 새롭게 배치됩니다.
+- **균형 잡힌 단서** — 논리 엔진이 모든 플레이어의 단서 난이도를 자동으로 균형 있게 조절합니다.
+- **Steam 온라인 멀티플레이** — 룸 코드 공유만으로 친구와 빠르게 접속할 수 있습니다.
+- **로컬 멀티플레이** — 한 PC에서 2~5명이 함께 플레이할 수 있습니다.
+- **턴 타이머** — 제한 시간 내에 행동하지 않으면 자동으로 패널티가 적용됩니다.
+- **다국어 지원** — 한국어 / English 실시간 전환을 지원합니다.
 
 ---
 
