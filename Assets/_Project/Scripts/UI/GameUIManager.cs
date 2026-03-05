@@ -47,6 +47,7 @@ namespace Cryptid.UI
         private PlayerSelectPanel _playerSelect;
         private CluePanel _cluePanel;
         private GameOverPanel _gameOverPanel;
+        private ErrorPanel _errorPanel;
         private GameLogPanel _gameLogPanel;
         private TileInfoPanel _tileInfoPanel;
         private PlayerHUDPanel _playerHUD;
@@ -197,6 +198,12 @@ namespace Cryptid.UI
             _gameOverPanel = overRoot.gameObject.AddComponent<GameOverPanel>();
             _gameOverPanel.Build(overRoot);
             _gameOverPanel.OnRestartClicked += HandleRestartClicked;
+
+            // Error Panel (fullscreen overlay for critical errors)
+            var errorRoot = UIFactory.CreatePanel(_canvas.transform, "ErrorPanel");
+            _errorPanel = errorRoot.gameObject.AddComponent<ErrorPanel>();
+            _errorPanel.Build(errorRoot);
+            _errorPanel.OnRestartClicked += HandleRestartClicked;
 
             // Game Log Panel (right-side scrolling log)
             var logRoot = UIFactory.CreatePanel(_canvas.transform,
@@ -562,6 +569,23 @@ namespace Cryptid.UI
             _gameOverPanel.Show(winnerIndex, answerInfo);
             _actionPanel.gameObject.SetActive(false);
             _playerSelect.Hide();
+        }
+
+        /// <summary>
+        /// Shows the error panel with a custom message.
+        /// Used for critical errors like map generation failure or network connection errors.
+        /// </summary>
+        public void ShowError(string title, string message)
+        {
+            _errorPanel.Show(title, message);
+        }
+
+        /// <summary>
+        /// Shows the error panel with default error title.
+        /// </summary>
+        public void ShowError(string message)
+        {
+            _errorPanel.Show(message);
         }
 
         // ---------------------------------------------------------

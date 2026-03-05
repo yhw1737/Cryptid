@@ -81,11 +81,25 @@ namespace Cryptid.Network
                 return false;
             }
 
-            _connectionManager = SteamNetworkingSockets
-                .ConnectRelay<CryptidConnectionManager>(TargetSteamId);
-            ((CryptidConnectionManager)_connectionManager).Transport = this;
-            Debug.Log($"[FacepunchTransport] Connecting to host {TargetSteamId}...");
-            return true;
+            try
+            {
+                _connectionManager = SteamNetworkingSockets
+                    .ConnectRelay<CryptidConnectionManager>(TargetSteamId);
+                ((CryptidConnectionManager)_connectionManager).Transport = this;
+                Debug.Log($"[FacepunchTransport] Connecting to host {TargetSteamId}...");
+                return true;
+            }
+            catch (System.ArgumentException ex)
+            {
+                Debug.LogError($"[FacepunchTransport] Failed to connect to Steam relay: {ex.Message}\n" +
+                              $"Ensure Steam is running and the room code is valid.");
+                return false;
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"[FacepunchTransport] Unexpected error connecting to Steam relay: {ex}");
+                return false;
+            }
         }
 
         public override NetworkEvent PollEvent(out ulong clientId, out ArraySegment<byte> payload,

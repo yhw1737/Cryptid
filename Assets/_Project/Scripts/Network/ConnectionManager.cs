@@ -589,7 +589,17 @@ namespace Cryptid.Network
             NetworkManager.Singleton.OnClientConnectedCallback += OnJoinConnected;
             NetworkManager.Singleton.OnClientDisconnectCallback += OnJoinDisconnected;
 
-            NetworkManager.Singleton.StartClient();
+            bool success = NetworkManager.Singleton.StartClient();
+            if (!success)
+            {
+                // Connection failed (likely Steam not running or invalid connection)
+                Debug.LogError("[ConnectionManager] Failed to start client connection.");
+                _joinStatusText.text = L.Get("connection_failed");
+                NetworkManager.Singleton.OnClientConnectedCallback -= OnJoinConnected;
+                NetworkManager.Singleton.OnClientDisconnectCallback -= OnJoinDisconnected;
+                return;
+            }
+
             _networkGameManager.Initialize(isHost: false);
         }
 

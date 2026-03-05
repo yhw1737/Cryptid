@@ -110,8 +110,8 @@ namespace Cryptid.Data
         [SerializeField] private float _maxTerrainFraction = 0.50f;
 
         [Tooltip("Maximum number of generation retries before giving up")]
-        [Range(5, 100)]
-        [SerializeField] private int _maxRetries = 50;
+        [Range(5, 200)]
+        [SerializeField] private int _maxRetries = 100;
 
         // ---------------------------------------------------------
         // Public API

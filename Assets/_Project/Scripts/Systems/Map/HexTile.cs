@@ -173,7 +173,7 @@ namespace Cryptid.Systems.Map
 
             _outlineRenderer = _outlineRing.AddComponent<MeshRenderer>();
             _outlineMaterial = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
-            _outlineMaterial.color = OutlineHoverColor;
+            _outlineMaterial.color = OutlinePenaltyColor;
             _outlineRenderer.material = _outlineMaterial;
             _outlineRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             _outlineRenderer.receiveShadows = false;

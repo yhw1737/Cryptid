@@ -159,6 +159,10 @@ namespace Cryptid.Core
             ["warn_tile_has_cube"]     = "  ⚠ 해당 타일에 큐브가 있어 차단되었습니다.",
             ["warn_already_token"]     = "  ⚠ 이미 해당 타일에 토큰이 있습니다.",
             ["warn_matches_clue"]      = "해당 타일은 당신의 단서와 일치합니다! 다른 타일을 선택하세요.",
+            ["error_title"]            = "오류",
+            ["map_generation_failed"]  = "맵 생성 실패\n\n100번 시도 후에도 유효한 맵을 생성할 수 없습니다.\n게임을 재시작하여 다시 시도하세요.",
+            ["connection_failed"]      = "Steam 연결 실패\n\nSteam이 실행 중이고 유효한 룸 코드를 입력했는지 확인하세요.",
+            ["restart"]                = "재시작",
 
             // ── Timer ──
             ["timer_remaining"]        = "남은 시간: {0}초",
@@ -310,6 +314,10 @@ namespace Cryptid.Core
             ["warn_tile_has_cube"]     = "  ⚠ That tile has a cube — permanently blocked.",
             ["warn_already_token"]     = "  ⚠ You already have a token on that tile.",
             ["warn_matches_clue"]      = "That tile matches your clue! Choose a different tile.",
+            ["error_title"]            = "ERROR",
+            ["map_generation_failed"]  = "Map Generation Failed\n\nUnable to generate a valid map after 100 attempts.\nPlease restart the game to try again.",
+            ["connection_failed"]      = "Steam Connection Failed\n\nPlease ensure Steam is running and you have entered a valid room code.",
+            ["restart"]                = "Restart",
 
             // ── Timer ──
             ["timer_remaining"]        = "Time left: {0}s",

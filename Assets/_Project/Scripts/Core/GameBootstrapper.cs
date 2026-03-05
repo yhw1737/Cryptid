@@ -188,6 +188,14 @@ namespace Cryptid.Core
             {
                 _mapGenerator.GenerateMap();
                 _mapGenerator.SpawnVisuals();
+
+                // Check if map generation failed after all retries
+                if (_mapGenerator.WorldMap == null || _mapGenerator.WorldMap.Count == 0)
+                {
+                    Debug.LogError("[GameBootstrapper] Map generation failed after all retries!");
+                    _uiManager.ShowError(L.Get("map_generation_failed"));
+                    return;
+                }
             }
 
             // Step 1.5: Center camera on the generated map
