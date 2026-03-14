@@ -18,7 +18,7 @@
 # ─────────────────────────────────────────────────────────────
 
 STEAM_USER="${STEAM_USER:-}"
-STEAMCMD="$HOME/steamworks_sdk/tools/ContentBuilder/builder/steamcmd.sh"
+STEAMCMD="$HOME/steamworks_sdk/tools/ContentBuilder/builder_osx/steamcmd.sh"
 SCRIPT_DIR="$(cd "$(dirname "$0")/scripts" && pwd)"
 
 if [[ -z "$STEAM_USER" ]]; then
