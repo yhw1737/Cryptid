@@ -134,3 +134,10 @@ Assets/StreamingAssets/aa/
 # NuGet (if using NuGetForUnity)
 # -----------------------------------------------
 Assets/Packages/
+
+# -----------------------------------------------
+# Steam Deployment (build output and logs only)
+# scripts/ and .vdf files ARE tracked for convenience
+# -----------------------------------------------
+_SteamDeploy/content/
+_SteamDeploy/output/

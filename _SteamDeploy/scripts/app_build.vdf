@@ -1,0 +1,13 @@
+"AppBuild"
+{
+    "AppID"         "4525130"
+    "Desc"          "LogicHunter v0.9.0"
+    "BuildOutput"   "../output/"
+    "ContentRoot"   "../content/"
+    "SetLive"       "beta"
+
+    "Depots"
+    {
+        "4525131"    "depot_build_windows.vdf"
+    }
+}

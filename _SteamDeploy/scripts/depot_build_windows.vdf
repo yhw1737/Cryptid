@@ -1,0 +1,16 @@
+"DepotBuild"
+{
+    "DepotID"       "4525131"
+    "ContentRoot"   "../content/Windows/"
+
+    "FileMapping"
+    {
+        "LocalPath"  "*"
+        "DepotPath"  "."
+        "recursive"  "1"
+    }
+
+    "FileExclusion"     "*.pdb"
+    "FileExclusion"     "*_BackUpThisFolder_ButDontShipItWithYourGame/*"
+    "FileExclusion"     "*_BurstDebugInformation_DoNotShip/*"
+}
