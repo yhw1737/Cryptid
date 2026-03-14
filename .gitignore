@@ -136,8 +136,11 @@ Assets/StreamingAssets/aa/
 Assets/Packages/
 
 # -----------------------------------------------
-# Steam Deployment (build output and logs only)
-# scripts/ and .vdf files ARE tracked for convenience
+# Steam Deployment — App ID and Depot ID are sensitive.
+# Use the *.template files as a base and fill in your IDs locally.
 # -----------------------------------------------
+steam_appid.txt
 _SteamDeploy/content/
 _SteamDeploy/output/
+_SteamDeploy/scripts/app_build.vdf
+_SteamDeploy/scripts/depot_build_windows.vdf

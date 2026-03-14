@@ -1,6 +1,6 @@
 "AppBuild"
 {
-    "AppID"         "4525130"
+    "AppID"         "YOUR_APP_ID"
     "Desc"          "LogicHunter v0.9.0"
     "BuildOutput"   "../output/"
     "ContentRoot"   "../content/"
@@ -8,6 +8,6 @@
 
     "Depots"
     {
-        "4525131"    "depot_build_windows.vdf"
+        "YOUR_DEPOT_ID"    "depot_build_windows.vdf"
     }
 }

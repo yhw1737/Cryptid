@@ -1,6 +1,6 @@
 "DepotBuild"
 {
-    "DepotID"       "4525131"
+    "DepotID"       "YOUR_DEPOT_ID"
     "ContentRoot"   "../content/Windows/"
 
     "FileMapping"

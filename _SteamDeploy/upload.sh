@@ -12,9 +12,12 @@
 #   3. Run:
 #      chmod +x upload.sh && ./upload.sh
 #
-# Requires: Steamworks SDK (ContentBuilder) installed.
-#   Download: https://partner.steamgames.com/downloads/list
-#   Expected path: ~/steamworks_sdk/tools/ContentBuilder/builder/
+# Requires:
+#   1. Steamworks SDK at: ~/steamworks_sdk/tools/ContentBuilder/
+#      Download: https://partner.steamgames.com/downloads/list
+#   2. Rename ./scripts/app_build.vdf.template     → app_build.vdf
+#      Rename ./scripts/depot_build_windows.vdf.template → depot_build_windows.vdf
+#      Fill in YOUR_APP_ID / YOUR_DEPOT_ID in both files.
 # ─────────────────────────────────────────────────────────────
 
 STEAM_USER="${STEAM_USER:-}"
