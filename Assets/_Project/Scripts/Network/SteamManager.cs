@@ -26,7 +26,7 @@ namespace Cryptid.Network
         public static SteamId MySteamId => SteamClient.SteamId;
 
         // App ID used during development (Spacewar test app)
-        private const uint APP_ID = 480;
+        private const uint APP_ID = 4525130;
 
         // ---------------------------------------------------------
         // Lifecycle
